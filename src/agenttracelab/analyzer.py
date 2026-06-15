@@ -1,0 +1,244 @@
+"""Turn conversations into structured traffic traces and aggregate metrics.
+
+Two outputs are produced from a :class:`~agenttracelab.models.Conversation`:
+
+* a per-turn **traffic trace** (:class:`TraceRow`) — the workload-characterization
+  view, where each assistant generation re-reads the growing context, so input
+  tokens accumulate exactly as they would against a real API; and
+* an aggregate **agent report** (:class:`AgentReport`) — the dashboard view, with
+  cost, latency, retries, corrections, and convergence efficiency.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+
+from .models import Conversation, Role, Turn
+from .pricing import PriceBook
+from .tokens import estimate_tokens
+
+
+@dataclass
+class TraceRow:
+    """One row of the structured traffic trace for a single turn."""
+
+    task_id: str
+    agent: str
+    model: str | None
+    turn_index: int
+    role: str
+    input_tokens: int
+    output_tokens: int
+    tool_calls: int
+    tool_failures: int
+    latency_ms: float
+    cost_usd: float
+    cumulative_cost_usd: float
+    is_retry: bool
+    is_correction: bool
+
+
+@dataclass
+class AgentReport:
+    """Aggregate metrics for one agent run, ready for ranking/display."""
+
+    agent: str
+    task_id: str
+    model: str | None
+    provider: str | None
+    turn_count: int
+    assistant_turns: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    tool_calls: int
+    tool_success_rate: float
+    retry_loops: int
+    correction_count: int
+    latency_estimate_ms: float
+    cost_estimate_usd: float
+    success_turn: int | None
+    turns_to_success: int | None
+    tokens_to_success: int | None
+    final_correct: bool
+    final_score: float
+    convergence_efficiency: float
+    trace: list[TraceRow] = field(default_factory=list)
+
+    def summary_dict(self) -> dict:
+        """Report fields without the (potentially large) trace rows."""
+
+        data = asdict(self)
+        data.pop("trace", None)
+        return data
+
+
+def _turn_output_tokens(turn: Turn) -> int:
+    """Output tokens generated in a turn: its text plus serialized tool args."""
+
+    if turn.output_tokens is not None:
+        return turn.output_tokens
+    total = estimate_tokens(turn.content)
+    for call in turn.tool_calls:
+        total += estimate_tokens(call.name)
+        total += estimate_tokens(str(call.arguments))
+    return total
+
+
+def _turn_context_tokens(turn: Turn) -> int:
+    """Token footprint a turn adds to the running context window."""
+
+    total = estimate_tokens(turn.content)
+    for call in turn.tool_calls:
+        total += estimate_tokens(call.name) + estimate_tokens(str(call.arguments))
+        if call.result:
+            total += estimate_tokens(str(call.result))
+    return total
+
+
+def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[TraceRow]:
+    """Produce the per-turn traffic trace for ``conv``.
+
+    Each assistant turn is billed for the full prior context as input (mirroring
+    how stateless chat APIs re-send history) plus its own generated tokens as
+    output. Non-assistant turns carry no independent cost; their tokens are
+    folded into the next assistant turn's input.
+    """
+
+    prices = prices or PriceBook()
+    rows: list[TraceRow] = []
+    running_context = 0
+    cumulative_cost = 0.0
+
+    for turn in conv.turns:
+        tool_calls = len(turn.tool_calls)
+        tool_failures = sum(1 for c in turn.tool_calls if not c.ok)
+
+        if turn.role is Role.ASSISTANT:
+            in_toks = turn.input_tokens if turn.input_tokens is not None else running_context
+            out_toks = _turn_output_tokens(turn)
+            cost = prices.cost_usd(conv.model, in_toks, out_toks)
+            latency = (
+                turn.latency_ms
+                if turn.latency_ms is not None
+                else prices.latency_ms(conv.model, out_toks)
+            )
+        else:
+            in_toks, out_toks, cost, latency = 0, 0, 0.0, 0.0
+
+        cumulative_cost += cost
+        rows.append(
+            TraceRow(
+                task_id=conv.task_id,
+                agent=conv.agent,
+                model=conv.model,
+                turn_index=turn.index,
+                role=turn.role.value,
+                input_tokens=in_toks,
+                output_tokens=out_toks,
+                tool_calls=tool_calls,
+                tool_failures=tool_failures,
+                latency_ms=round(latency, 1),
+                cost_usd=round(cost, 6),
+                cumulative_cost_usd=round(cumulative_cost, 6),
+                is_retry=turn.is_retry,
+                is_correction=turn.is_correction,
+            )
+        )
+        running_context += _turn_context_tokens(turn)
+
+    return rows
+
+
+def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
+    """Compute the aggregate :class:`AgentReport` for ``conv``."""
+
+    prices = prices or PriceBook()
+    trace = build_trace(conv, prices)
+
+    input_tokens = sum(r.input_tokens for r in trace)
+    output_tokens = sum(r.output_tokens for r in trace)
+    total_cost = sum(r.cost_usd for r in trace)
+    total_latency = sum(r.latency_ms for r in trace)
+
+    total_tool_calls = sum(r.tool_calls for r in trace)
+    total_tool_failures = sum(r.tool_failures for r in trace)
+    tool_success_rate = (
+        1.0 if total_tool_calls == 0 else 1.0 - total_tool_failures / total_tool_calls
+    )
+
+    retry_loops = sum(1 for r in trace if r.is_retry)
+    correction_count = sum(1 for r in trace if r.is_correction)
+
+    # Tokens/turns consumed up to and including the first useful answer.
+    tokens_to_success: int | None = None
+    turns_to_success: int | None = None
+    if conv.success_turn is not None:
+        upto = [r for r in trace if r.turn_index <= conv.success_turn]
+        tokens_to_success = sum(r.input_tokens + r.output_tokens for r in upto)
+        turns_to_success = sum(1 for r in upto if r.role == Role.ASSISTANT.value)
+
+    convergence_efficiency = _convergence_efficiency(
+        final_score=conv.final_score,
+        converged=conv.converged,
+        tokens_to_success=tokens_to_success,
+        total_tokens=input_tokens + output_tokens,
+        corrections=correction_count,
+    )
+
+    return AgentReport(
+        agent=conv.agent,
+        task_id=conv.task_id,
+        model=conv.model,
+        provider=conv.provider,
+        turn_count=len(conv.turns),
+        assistant_turns=len(conv.assistant_turns),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
+        tool_calls=total_tool_calls,
+        tool_success_rate=round(tool_success_rate, 4),
+        retry_loops=retry_loops,
+        correction_count=correction_count,
+        latency_estimate_ms=round(total_latency, 1),
+        cost_estimate_usd=round(total_cost, 6),
+        success_turn=conv.success_turn,
+        turns_to_success=turns_to_success,
+        tokens_to_success=tokens_to_success,
+        final_correct=conv.final_correct,
+        final_score=conv.final_score,
+        convergence_efficiency=convergence_efficiency,
+        trace=trace,
+    )
+
+
+def _convergence_efficiency(
+    *,
+    final_score: float,
+    converged: bool,
+    tokens_to_success: int | None,
+    total_tokens: int,
+    corrections: int,
+) -> float:
+    """A 0-1 score rewarding correct answers reached with few tokens/corrections.
+
+    Combines result quality with how much budget it took to get there. An agent
+    that never converged scores 0; one that converged cheaply and without user
+    corrections approaches 1.
+    """
+
+    if not converged or final_score <= 0:
+        return 0.0
+
+    denom = tokens_to_success or total_tokens or 1
+    # Normalize against a reference budget of 4k tokens-to-success.
+    budget_term = min(1.0, 4000.0 / denom)
+    correction_penalty = 1.0 / (1.0 + corrections)
+    return round(final_score * budget_term * correction_penalty, 4)
+
+
+def analyze_many(
+    conversations: list[Conversation], prices: PriceBook | None = None
+) -> list[AgentReport]:
+    prices = prices or PriceBook()
+    return [analyze(c, prices) for c in conversations]

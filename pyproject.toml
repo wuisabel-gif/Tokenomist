@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenttracelab"
+version = "0.1.0"
+description = "Characterize and compare agentic LLM workloads from multi-turn conversation logs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "agents", "workload-characterization", "observability", "tracing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.30", "pandas>=2.0"]
+tokens = ["tiktoken>=0.6"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+agenttracelab = "agenttracelab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,27 @@
+{
+  "agent": "Custom Agent",
+  "model": "claude-haiku",
+  "provider": "custom",
+  "task_id": "fix-parse-duration",
+  "success_turn": 2,
+  "final_correct": true,
+  "final_score": 0.95,
+  "turns": [
+    {
+      "role": "user",
+      "content": "Fix parse_duration() so '1h30m', '45s', '2h', etc. convert to total seconds."
+    },
+    {
+      "role": "assistant",
+      "content": "Regex over each value/unit pair, summed against a units table.",
+      "tool_calls": [
+        {"name": "apply_patch", "arguments": {"path": "durations.py", "diff": "+import re\n+UNITS={'h':3600,'m':60,'s':1}\n+def parse_duration(s):\n+    return sum(int(v)*UNITS[u] for v,u in re.findall(r'(\\d+)([hms])', s))"}, "ok": true},
+        {"name": "run_tests", "arguments": {"path": "test_durations.py"}, "ok": true, "result": "5 passed"}
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "Done — all 5 tests pass. Single tool-augmented turn: patch applied and verified."
+    }
+  ]
+}

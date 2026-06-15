@@ -1,0 +1,42 @@
+{
+  "agent": "LangGraph Agent",
+  "model": "gpt-4o-mini",
+  "provider": "langgraph",
+  "task_id": "fix-parse-duration",
+  "success_turn": 5,
+  "final_correct": true,
+  "final_score": 0.9,
+  "messages": [
+    {
+      "type": "human",
+      "content": "parse_duration() needs to handle '1h30m', '45s', '2h15m10s'. Fix and verify."
+    },
+    {
+      "type": "ai",
+      "content": "Planning: read the file, write a regex parser, run tests.",
+      "tool_calls": [{"name": "read_file", "args": {"path": "durations.py"}}]
+    },
+    {
+      "type": "tool",
+      "content": "def parse_duration(s): return int(s)"
+    },
+    {
+      "type": "ai",
+      "content": "Replacing with a regex-based summation over h/m/s units.",
+      "tool_calls": [{"name": "write_file", "args": {"path": "durations.py", "content": "import re\nUNITS={'h':3600,'m':60,'s':1}\ndef parse_duration(s):\n    return sum(int(v)*UNITS[u] for v,u in re.findall(r'(\\d+)([hms])', s))"}}]
+    },
+    {
+      "type": "ai",
+      "content": "Running the suite.",
+      "tool_calls": [{"name": "run_tests", "args": {"path": "test_durations.py"}}]
+    },
+    {
+      "type": "tool",
+      "content": "5 passed in 0.04s"
+    },
+    {
+      "type": "ai",
+      "content": "All tests pass. parse_duration now sums each value/unit pair, so '2h15m10s' resolves to 8110 seconds."
+    }
+  ]
+}
