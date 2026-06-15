@@ -133,8 +133,9 @@ Formats are auto-detected from the JSON shape (override with `--format`):
 | `gemini` | Google `generateContent` | `{"contents": [{"role", "parts"}]}` |
 | `langgraph` | LangChain / LangGraph state | `{"messages": [{"type", "content"}]}` |
 
-See [`data/samples`](data/samples) for one example of each, all solving the same
-`fix-parse-duration` task.
+See [`data/samples`](data/samples) for one example of each. **For the exact
+field-by-field upload contract, see [`FORMAT.md`](FORMAT.md)** (also available
+in the browser demo under “How should my logs look?”).
 
 ## Project layout
 

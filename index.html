@@ -96,6 +96,25 @@
   code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
   .dropzone { border: 1px dashed var(--border); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
   .dropzone.drag { border-color: var(--accent); color: var(--text); background: var(--panel-2); }
+  /* ----- format help ----- */
+  .format-help { margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px 16px; }
+  .format-help summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 10px 0; color: var(--accent); list-style: none; }
+  .format-help summary::-webkit-details-marker { display: none; }
+  .format-help summary::before { content: "▸ "; color: var(--muted); }
+  .format-help[open] summary::before { content: "▾ "; }
+  .format-body { font-size: 13px; color: var(--text); padding: 4px 0 16px; }
+  .format-body p { margin: 8px 0; color: var(--muted); }
+  .format-body h4 { margin: 16px 0 6px; font-size: 13px; }
+  .format-body ul { margin: 6px 0; padding-left: 20px; color: var(--muted); }
+  .format-body li { margin: 3px 0; }
+  .format-body code { color: var(--text); }
+  .format-body pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; overflow-x: auto; font-size: 12px; line-height: 1.45; color: #cdd9e8; }
+  .ftable { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0; }
+  .ftable th, .ftable td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .ftable th { color: var(--muted); font-weight: 600; }
+  .ftable td code { color: var(--accent); }
+
   /* ----- scenario picker ----- */
   .scenario-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 20px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
@@ -177,6 +196,61 @@
   </div>
 
   <div id="dropzone" class="dropzone" style="margin-top:14px;">Or bring your own: drag &amp; drop conversation JSON here, or use <strong>Upload logs</strong>. Formats auto-detect: native · OpenAI/ChatGPT · Gemini · LangGraph.</div>
+
+  <details class="format-help">
+    <summary>How should my logs look? (exact upload format)</summary>
+    <div class="format-body">
+      <p><strong>One JSON file = one agent's run of one task.</strong> To compare agents on the same task, give every file the same <code>task_id</code> and upload them together (multi-select or drag several in). The format is auto-detected from the JSON shape — you don't pick it.</p>
+
+      <h4>1. Top-level fields (you provide these — they are the "answer key")</h4>
+      <table class="ftable">
+        <tr><th>Field</th><th>Type</th><th>Required</th><th>Meaning</th></tr>
+        <tr><td><code>agent</code></td><td>string</td><td>recommended</td><td>Display name in the table/race (e.g. "Claude").</td></tr>
+        <tr><td><code>model</code></td><td>string</td><td>recommended</td><td>Drives cost &amp; latency. Use a known id (see list below).</td></tr>
+        <tr><td><code>task_id</code></td><td>string</td><td>recommended</td><td>Same value across files = same task being compared.</td></tr>
+        <tr><td><code>success_turn</code></td><td>int or null</td><td>required*</td><td><b>0-based index</b> into the turns array of the first turn with a useful/correct answer. <code>null</code> = never solved.</td></tr>
+        <tr><td><code>final_correct</code></td><td>bool</td><td>required*</td><td>Was the final result actually right.</td></tr>
+        <tr><td><code>final_score</code></td><td>0.0–1.0</td><td>required*</td><td>Quality of the final answer. 1.0 = perfect, 0 = failed.</td></tr>
+      </table>
+      <p>*Without these the run can't be scored: it shows as “failed”, efficiency 0, and the car won't finish the race. They are how the tool knows who actually solved the task.</p>
+
+      <h4>2. Per-turn fields</h4>
+      <table class="ftable">
+        <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+        <tr><td><code>role</code> / <code>type</code></td><td>string</td><td><code>user</code>, <code>assistant</code>, <code>tool</code>, <code>system</code> (LangGraph: <code>human</code>/<code>ai</code>/<code>tool</code>).</td></tr>
+        <tr><td><code>content</code></td><td>string</td><td>The message text.</td></tr>
+        <tr><td><code>input_tokens</code>, <code>output_tokens</code></td><td>int</td><td>Optional. If omitted, estimated from text (~4 chars/token).</td></tr>
+        <tr><td><code>tool_calls</code></td><td>array</td><td>Optional. <code>[{"name","arguments","ok","result"}]</code>.</td></tr>
+        <tr><td><code>is_correction</code></td><td>bool</td><td>Optional. Marks a user turn that corrected the agent. Auto-detected from phrasing if omitted.</td></tr>
+        <tr><td><code>is_retry</code></td><td>bool</td><td>Optional. Marks an assistant turn that retried. Auto-detected if omitted.</td></tr>
+      </table>
+
+      <h4>3. The four accepted shapes</h4>
+      <ul>
+        <li><b>Native</b> (recommended) — has a <code>"turns"</code> array.</li>
+        <li><b>OpenAI / ChatGPT</b> — has <code>"messages"</code>, each with a <code>"role"</code>.</li>
+        <li><b>Gemini</b> — has <code>"contents"</code>, each with <code>"role"</code> + <code>"parts"</code>.</li>
+        <li><b>LangGraph</b> — has <code>"messages"</code>, each with a <code>"type"</code> (no <code>"role"</code>).</li>
+      </ul>
+
+      <h4>4. Minimal copy-paste example (native format)</h4>
+      <pre>{
+  "agent": "Claude",
+  "model": "claude-sonnet",
+  "task_id": "fix-login-bug",
+  "success_turn": 2,
+  "final_correct": true,
+  "final_score": 1.0,
+  "turns": [
+    { "role": "user", "content": "The login form throws on empty email. Fix it." },
+    { "role": "assistant", "content": "Reading the handler.",
+      "tool_calls": [ { "name": "read_file", "arguments": { "path": "login.js" }, "ok": true } ] },
+    { "role": "assistant", "content": "Added a guard for empty email; tests pass." }
+  ]
+}</pre>
+      <p>Here <code>success_turn: 2</code> points at the third element (index 2) — the assistant turn that solved it. Known model ids for accurate pricing: <code>claude-opus</code>, <code>claude-sonnet</code>, <code>claude-haiku</code>, <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>o3</code>, <code>gemini-1.5-pro</code>, <code>gemini-1.5-flash</code>, <code>gemini-2.0-flash</code>. Anything else falls back to a generic rate.</p>
+    </div>
+  </details>
 
   <div class="cards" id="cards"></div>
 
@@ -535,8 +609,8 @@ function mkTurn(i, role, content, opts = {}) {
     output_tokens: opts.output_tokens ?? null,
     tool_calls: opts.tool_calls || [],
     latency_ms: opts.latency_ms ?? null,
-    is_correction: role === "user" && CORRECTION_RE.test(text),
-    is_retry: role === "assistant" && RETRY_RE.test(text),
+    is_correction: opts.is_correction != null ? !!opts.is_correction : (role === "user" && CORRECTION_RE.test(text)),
+    is_retry: opts.is_retry != null ? !!opts.is_retry : (role === "assistant" && RETRY_RE.test(text)),
   };
 }
 
@@ -544,6 +618,7 @@ function mkTurn(i, role, content, opts = {}) {
 function parseNative(d, path) {
   const turns = (d.turns || []).map((raw, i) => mkTurn(i, normRole(raw.role || "assistant"), raw.content, {
     input_tokens: raw.input_tokens, output_tokens: raw.output_tokens,
+    latency_ms: raw.latency_ms, is_correction: raw.is_correction, is_retry: raw.is_retry,
     tool_calls: (raw.tool_calls || []).map(tc => ({name: tc.name || "tool", arguments: tc.arguments || {}, ok: tc.ok !== false, result: tc.result ?? null})),
   }));
   return conv(d, turns, {agent: "Agent", format: "native", path});
@@ -555,7 +630,7 @@ function parseOpenAI(d, path) {
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = {_raw: args}; } }
       return {name: fn.name || "tool", arguments: args || {}, ok: tc.ok !== false, result: tc.result ?? null};
     });
-    return mkTurn(i, normRole(raw.role || "assistant"), raw.content, {input_tokens: raw.input_tokens, output_tokens: raw.output_tokens, tool_calls: calls});
+    return mkTurn(i, normRole(raw.role || "assistant"), raw.content, {input_tokens: raw.input_tokens, output_tokens: raw.output_tokens, latency_ms: raw.latency_ms, is_correction: raw.is_correction, is_retry: raw.is_retry, tool_calls: calls});
   });
   return conv(d, turns, {agent: "ChatGPT", model: "gpt-4o", format: "openai_chat", path});
 }
