@@ -28,6 +28,9 @@ formats, and supports drag-and-drop of your own conversation JSON.
 
 It renders:
 
+- an animated **race** where each agent is a car whose speed is its convergence
+  efficiency — the most efficient agent takes the checkered flag (🥇🥈🥉) and
+  runs that never converged stall before the finish line,
 - a ranked comparison table (click any column to re-sort),
 - summary cards (most efficient / cheapest / fastest agent),
 - bar charts for cost, latency, convergence efficiency, and tokens-to-success, and

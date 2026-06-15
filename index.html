@@ -96,9 +96,52 @@
   code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
   .dropzone { border: 1px dashed var(--border); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
   .dropzone.drag { border-color: var(--accent); color: var(--text); background: var(--panel-2); }
+  /* ----- race ----- */
+  .race-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .race-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .lane { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 12px; padding: 5px 0; }
+  .lane .who { font-size: 13px; font-weight: 650; display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lane .medal { width: 16px; text-align: center; }
+  .track {
+    position: relative; height: 34px; border-radius: 8px; overflow: hidden;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 26px, rgba(255,255,255,.12) 26px 44px) center/100% 3px no-repeat,
+      linear-gradient(180deg, #1a2434, #141c29);
+    border: 1px solid var(--border);
+  }
+  .finish {
+    position: absolute; top: 0; bottom: 0; right: 0; width: 12px;
+    background:
+      repeating-conic-gradient(#e9eef6 0% 25%, #2a3142 0% 50%) 0 0 / 6px 6px;
+    opacity: .85;
+  }
+  .car {
+    position: absolute; top: 50%; left: 2%; transform: translate(-50%, -50%) scaleX(-1);
+    font-size: 22px; line-height: 1; will-change: left; filter: drop-shadow(0 2px 2px rgba(0,0,0,.5));
+  }
+  .car.running { animation: bob .35s ease-in-out infinite; }
+  @keyframes bob {
+    0%, 100% { transform: translate(-50%, -50%) scaleX(-1) rotate(0deg); }
+    50% { transform: translate(-50%, -56%) scaleX(-1) rotate(-1.5deg); }
+  }
+  .car .dust {
+    position: absolute; right: -2px; top: 60%; width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(180,195,215,.55); opacity: 0; transform: scaleX(-1);
+  }
+  .car.running .dust { animation: puff .45s ease-out infinite; }
+  @keyframes puff {
+    0% { opacity: .55; transform: translateX(0) scale(.5); }
+    100% { opacity: 0; transform: translateX(16px) scale(1.6); }
+  }
+  .lane.winner .track { box-shadow: 0 0 0 1px var(--good), 0 0 18px rgba(54,211,153,.35); }
+  .lane.stalled .who { color: var(--muted); }
+  .race-banner { margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 20px; }
+  .race-banner strong { color: var(--good); }
+
   @media (max-width: 860px) {
     .cards { grid-template-columns: repeat(2, 1fr); }
     .grid2 { grid-template-columns: 1fr; }
+    .lane { grid-template-columns: 110px 1fr; }
   }
 </style>
 </head>
@@ -123,6 +166,17 @@
   <div id="dropzone" class="dropzone" style="margin-top:16px;">Drag &amp; drop conversation JSON here, or use <strong>Upload logs</strong>. Formats auto-detect: native · OpenAI/ChatGPT · Gemini · LangGraph.</div>
 
   <div class="cards" id="cards"></div>
+
+  <section>
+    <div class="race-head">
+      <h2 style="margin:0">🏎️ The race <span class="hint">— each car's speed is its convergence efficiency; non-converged runs stall before the line</span></h2>
+      <button class="btn" id="race-btn">Restart race</button>
+    </div>
+    <div class="race-panel">
+      <div id="race-track"></div>
+      <div class="race-banner" id="race-banner"></div>
+    </div>
+  </section>
 
   <section>
     <h2>Comparison <span class="hint">— click a column to sort</span></h2>
@@ -445,6 +499,7 @@ function rankReports(rs) {
 /* ============================ UI ============================ */
 const $ = s => document.querySelector(s);
 let REPORTS = [];
+let RACE = [];
 let sortKey = "convergence_efficiency", sortDir = -1;
 
 function loadSamples() {
@@ -452,6 +507,7 @@ function loadSamples() {
   const convs = ids.map(id => detectAndParse(JSON.parse(document.getElementById(id).textContent)));
   REPORTS = convs.map(analyze);
   render();
+  renderRace();
 }
 
 const COLS = [
@@ -605,6 +661,78 @@ function drawTraceChart(rep) {
     </svg>`;
 }
 
+/* ---- race animation ---- */
+const RACE_CARS = ["🏎️", "🚙", "🚗", "🛻", "🏍️", "🚕"];
+const MIN_DUR = 2200, MAX_DUR = 4200, STALL_DUR = 2600;
+
+function renderRace() {
+  const ranked = rankReports(REPORTS);
+  const maxEff = Math.max(...ranked.map(r => r.convergence_efficiency), 0);
+  const track = $("#race-track");
+  track.innerHTML = ranked.map((r, i) =>
+    `<div class="lane" data-agent="${r.agent}">
+       <div class="who"><span class="medal"></span>${r.agent}</div>
+       <div class="track"><span class="car">${RACE_CARS[i % RACE_CARS.length]}<span class="dust"></span></span><span class="finish"></span></div>
+     </div>`).join("");
+
+  RACE = ranked.map((r, i) => {
+    const lane = track.children[i];
+    const converged = r.success_turn != null && r.final_score > 0;
+    let dur, target;
+    if (converged && maxEff > 0) {
+      const norm = r.convergence_efficiency / maxEff;        // 1 = fastest
+      dur = MIN_DUR + (1 - norm) * (MAX_DUR - MIN_DUR);
+      target = "93%";
+    } else {
+      dur = STALL_DUR;
+      target = (2 + (r.final_score || 0) * 80) + "%";         // stalls partway
+    }
+    return {report: r, lane, carEl: lane.querySelector(".car"), dur, target, converged};
+  });
+  startRace();
+}
+
+function startRace() {
+  if (!RACE.length) return;
+  const banner = $("#race-banner");
+  banner.innerHTML = "🚦 And they're off…";
+  RACE.forEach(e => {
+    e.lane.classList.remove("winner", "stalled");
+    e.carEl.classList.remove("running");
+    e.carEl.style.transition = "none";
+    e.carEl.style.left = "2%";
+    e.lane.querySelector(".medal").textContent = "";
+  });
+  void $("#race-track").offsetWidth; // force reflow so the reset position applies
+
+  // setTimeout (not rAF) so the CSS transition fires even in throttled/background tabs.
+  setTimeout(() => RACE.forEach(e => {
+    e.carEl.style.transition = `left ${Math.round(e.dur)}ms cubic-bezier(.18,.66,.32,1)`;
+    e.carEl.style.left = e.target;
+    e.carEl.classList.add("running");
+    if (!e.converged) {
+      e.lane.classList.add("stalled");
+      setTimeout(() => e.carEl.classList.remove("running"), STALL_DUR + 40);
+    }
+  }), 60);
+
+  const medals = ["🥇", "🥈", "🥉"];
+  rankReports(RACE.filter(e => e.converged).map(e => e.report))
+    .map(rep => RACE.find(e => e.report === rep))
+    .forEach((e, idx) => setTimeout(() => {
+      e.carEl.classList.remove("running");
+      e.lane.querySelector(".medal").textContent = medals[idx] || "";
+      if (idx === 0) {
+        e.lane.classList.add("winner");
+        banner.innerHTML = `🏁 <strong>${e.report.agent}</strong> takes the checkered flag — ` +
+          `most efficient run (efficiency ${e.report.convergence_efficiency.toFixed(3)}, ` +
+          `$${e.report.cost_estimate_usd.toFixed(4)}, ${e.report.turns_to_success} turns to solve).`;
+      }
+    }, Math.round(e.dur) + 70));
+}
+
+$("#race-btn").addEventListener("click", startRace);
+
 /* ---- file upload / drag-drop ---- */
 function ingestFiles(fileList) {
   const files = [...fileList];
@@ -621,7 +749,7 @@ function ingestFiles(fileList) {
         alert("Could not parse " + f.name + ": " + e.message);
       }
       if (--pending === 0) {
-        if (newReports.length) { REPORTS = REPORTS.concat(newReports); render(); }
+        if (newReports.length) { REPORTS = REPORTS.concat(newReports); render(); renderRace(); }
       }
     };
     reader.readAsText(f);
