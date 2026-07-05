@@ -1,0 +1,41 @@
+name: Deploy demo to Pages
+
+# Publishes the self-contained browser demo (index.html) to GitHub Pages.
+# Requires Pages enabled with "GitHub Actions" as the source (see PHASE3_NOTES.md).
+on:
+  push:
+    branches: [main]
+    # Only redeploy when the demo actually changes.
+    paths:
+      - "index.html"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage the demo as the site root
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

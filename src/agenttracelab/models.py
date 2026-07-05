@@ -33,7 +33,7 @@ class ToolCall:
     latency_ms: float | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ToolCall":
+    def from_dict(cls, data: dict[str, Any]) -> ToolCall:
         return cls(
             name=str(data.get("name", "unknown")),
             arguments=dict(data.get("arguments", {}) or {}),

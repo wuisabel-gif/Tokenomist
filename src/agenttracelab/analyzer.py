@@ -32,8 +32,8 @@ class TraceRow:
     tool_calls: int
     tool_failures: int
     latency_ms: float
-    cost_usd: float
-    cumulative_cost_usd: float
+    cost_usd: float | None
+    cumulative_cost_usd: float | None
     is_retry: bool
     is_correction: bool
 
@@ -56,7 +56,7 @@ class AgentReport:
     retry_loops: int
     correction_count: int
     latency_estimate_ms: float
-    cost_estimate_usd: float
+    cost_estimate_usd: float | None
     success_turn: int | None
     turns_to_success: int | None
     tokens_to_success: int | None
@@ -106,9 +106,12 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
     """
 
     prices = prices or PriceBook()
+    # A conversation has one model, so its cost is uniformly known or unknown.
+    # When unknown we surface ``None`` (n/a) rather than a fabricated number.
+    model_known = prices.resolve(conv.model) is not None
     rows: list[TraceRow] = []
     running_context = 0
-    cumulative_cost = 0.0
+    cumulative_cost: float | None = 0.0 if model_known else None
 
     for turn in conv.turns:
         tool_calls = len(turn.tool_calls)
@@ -124,9 +127,11 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
                 else prices.latency_ms(conv.model, out_toks)
             )
         else:
-            in_toks, out_toks, cost, latency = 0, 0, 0.0, 0.0
+            in_toks, out_toks, latency = 0, 0, 0.0
+            cost = 0.0 if model_known else None
 
-        cumulative_cost += cost
+        if cost is not None and cumulative_cost is not None:
+            cumulative_cost += cost
         rows.append(
             TraceRow(
                 task_id=conv.task_id,
@@ -139,8 +144,10 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
                 tool_calls=tool_calls,
                 tool_failures=tool_failures,
                 latency_ms=round(latency, 1),
-                cost_usd=round(cost, 6),
-                cumulative_cost_usd=round(cumulative_cost, 6),
+                cost_usd=None if cost is None else round(cost, 6),
+                cumulative_cost_usd=(
+                    None if cumulative_cost is None else round(cumulative_cost, 6)
+                ),
                 is_retry=turn.is_retry,
                 is_correction=turn.is_correction,
             )
@@ -158,7 +165,10 @@ def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
 
     input_tokens = sum(r.input_tokens for r in trace)
     output_tokens = sum(r.output_tokens for r in trace)
-    total_cost = sum(r.cost_usd for r in trace)
+    # None if any turn's price is unknown (uniform per conversation).
+    total_cost: float | None = (
+        None if any(r.cost_usd is None for r in trace) else sum(r.cost_usd for r in trace)  # type: ignore[misc]
+    )
     total_latency = sum(r.latency_ms for r in trace)
 
     total_tool_calls = sum(r.tool_calls for r in trace)
@@ -201,7 +211,7 @@ def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
         retry_loops=retry_loops,
         correction_count=correction_count,
         latency_estimate_ms=round(total_latency, 1),
-        cost_estimate_usd=round(total_cost, 6),
+        cost_estimate_usd=None if total_cost is None else round(total_cost, 6),
         success_turn=conv.success_turn,
         turns_to_success=turns_to_success,
         tokens_to_success=tokens_to_success,

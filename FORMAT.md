@@ -50,13 +50,17 @@ with them omitted is treated as an unsolved/failed run.
 
 ### Known model ids (for accurate pricing)
 
-`claude-opus`, `claude-sonnet`, `claude-haiku`, `gpt-4o`, `gpt-4o-mini`, `o3`,
-`gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-2.0-flash`.
+The price book lives in [`src/agenttracelab/prices.json`](src/agenttracelab/prices.json)
+and covers current models across Anthropic, OpenAI, Google, Z.ai (GLM),
+DeepSeek, Mistral, MiniMax, Qwen, and Llama, plus retained legacy ids.
 
-Matching is substring-based, so `claude-sonnet-4-6` resolves to the
-`claude-sonnet` rate. Unknown models fall back to a generic rate. (Prices are
-approximate public list rates for *relative* comparison, not billing — and are
-configurable via a `PriceBook` in the Python library.)
+Matching is by **longest family prefix**, so a dated id like
+`claude-sonnet-4-6-20250514` resolves to the `claude-sonnet-4-6` family, and
+short aliases (`claude-sonnet`, `glm-5.1`, `gpt-5`) resolve to a current model.
+An **unknown model reports cost as `n/a`** rather than a fabricated rate. Prices
+are approximate public list rates for *relative* comparison, not billing;
+override them with your own file via `--prices` (CLI) or `PriceBook.from_file()`
+(library). See the price book for the full, current list of ids.
 
 ---
 

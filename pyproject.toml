@@ -11,16 +11,32 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["llm", "agents", "workload-characterization", "observability", "tracing"]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/wuisabel-gif/agent_race"
+Repository = "https://github.com/wuisabel-gif/agent_race"
+Issues = "https://github.com/wuisabel-gif/agent_race/issues"
+Changelog = "https://github.com/wuisabel-gif/agent_race/blob/main/CHANGELOG.md"
+Demo = "https://wuisabel-gif.github.io/agent_race/"
 
 [project.optional-dependencies]
 dashboard = ["streamlit>=1.30", "pandas>=2.0"]
 tokens = ["tiktoken>=0.6"]
-dev = ["pytest>=7.0"]
+capture = ["openai>=1.0"]
+dev = ["pytest>=7.0", "ruff>=0.6"]
 
 [project.scripts]
 agenttracelab = "agenttracelab.cli:main"
@@ -28,6 +44,21 @@ agenttracelab = "agenttracelab.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+agenttracelab = ["prices.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# pycodestyle errors/warnings, pyflakes, import sorting, pyupgrade, bugbear.
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agenttracelab"]

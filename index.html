@@ -98,6 +98,9 @@
   code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
   .dropzone { border: 1px dashed var(--border); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
   .dropzone.drag { border-color: var(--accent); color: var(--text); background: var(--panel-2); }
+  .callout { margin-top: 14px; background: rgba(91,157,255,.08); border: 1px solid rgba(91,157,255,.28); border-radius: 12px; padding: 13px 16px; color: var(--muted); font-size: 13px; }
+  .callout strong { color: var(--text); }
+  .callout code { color: var(--text); }
   /* ----- format help ----- */
   .format-help { margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px 16px; }
   .format-help summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 10px 0; color: var(--accent); list-style: none; }
@@ -199,6 +202,13 @@
 
   <div id="dropzone" class="dropzone" style="margin-top:14px;">Or bring your own: drag &amp; drop conversation JSON here, or use <strong>Upload logs</strong>. Formats auto-detect: native · OpenAI/ChatGPT · Gemini · LangGraph.</div>
 
+  <div class="callout">
+    <strong>Want to choose between Codex, Gemini, Claude, Cursor, or another terminal agent?</strong>
+    Use <code>agenttracelab init-agents</code>, edit the generated commands, then run
+    <code>agenttracelab route job.md --agents agents.json</code>. For stricter coding benchmarks,
+    <code>harness/run_agent.py</code> creates pytest-backed logs with objective pass/fail.
+  </div>
+
   <details class="format-help">
     <summary>How should my logs look? (exact upload format)</summary>
     <div class="format-body">
@@ -250,7 +260,7 @@
     { "role": "assistant", "content": "Added a guard for empty email; tests pass." }
   ]
 }</pre>
-      <p>Here <code>success_turn: 2</code> points at the third element (index 2) — the assistant turn that solved it. Known model ids for accurate pricing: <code>claude-opus</code>, <code>claude-sonnet</code>, <code>claude-haiku</code>, <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>o3</code>, <code>gemini-1.5-pro</code>, <code>gemini-1.5-flash</code>, <code>gemini-2.0-flash</code>. Anything else falls back to a generic rate.</p>
+      <p>Here <code>success_turn: 2</code> points at the third element (index 2) — the assistant turn that solved it. Known model ids use family-prefix matching, so dated ids still resolve. Examples: <code>claude-opus-4-8</code>, <code>claude-sonnet-5</code>, <code>claude-haiku-4-5</code>, <code>gpt-5.4</code>, <code>gpt-5.4-mini</code>, <code>gpt-4o</code>, <code>gemini-3.1-pro</code>, <code>glm-5.1</code>, <code>deepseek-v4-pro</code>. Unknown model costs show as <code>n/a</code> instead of using a fabricated rate.</p>
     </div>
   </details>
 
@@ -550,33 +560,52 @@
 
 // ---- pricing.py ----
 const PRICES = {
-  "claude-opus":     {in: 15.0, out: 75.0, tps: 45},
-  "claude-sonnet":   {in: 3.0,  out: 15.0, tps: 65},
-  "claude-haiku":    {in: 0.80, out: 4.0,  tps: 120},
+  "claude-opus-4-8": {in: 5.0,  out: 25.0, tps: 45, aliases: ["claude-opus", "opus-4-8"]},
+  "claude-sonnet-5": {in: 3.0,  out: 15.0, tps: 65, aliases: ["claude-sonnet", "sonnet-5"]},
+  "claude-haiku-4-5":{in: 1.0,  out: 5.0,  tps: 120, aliases: ["claude-haiku", "haiku-4-5"]},
+  "gpt-5.4":         {in: 2.0,  out: 12.0, tps: 80, aliases: ["gpt-5", "gpt5"]},
+  "gpt-5.4-mini":    {in: 0.75, out: 4.50, tps: 160},
+  "gpt-5.4-nano":    {in: 0.20, out: 1.25, tps: 180},
   "gpt-4o":          {in: 2.5,  out: 10.0, tps: 80},
   "gpt-4o-mini":     {in: 0.15, out: 0.60, tps: 130},
   "o3":              {in: 10.0, out: 40.0, tps: 40},
+  "gemini-3.1-pro":  {in: 2.0,  out: 12.0, tps: 70, aliases: ["gemini-pro", "gemini"]},
+  "gemini-3.1-flash":{in: 0.30, out: 2.50, tps: 150, aliases: ["gemini-flash"]},
   "gemini-1.5-pro":  {in: 1.25, out: 5.0,  tps: 70},
   "gemini-1.5-flash":{in: 0.075,out: 0.30, tps: 150},
-  "gemini-2.0-flash":{in: 0.10, out: 0.40, tps: 160},
+  "glm-5.1":         {in: 1.40, out: 4.40, tps: 80, aliases: ["glm-5.1-fp8"]},
+  "glm-5":           {in: 1.00, out: 3.20, tps: 80},
+  "deepseek-v4-pro": {in: 0.28, out: 1.10, tps: 90, aliases: ["deepseek-v4"]},
+  "deepseek-v4-flash":{in: 0.14,out: 0.28, tps: 120},
 };
-const GENERIC_PRICE = {in: 2.0, out: 8.0, tps: 70};
+const DEFAULT_OUTPUT_TPS = 60;
 const TURN_OVERHEAD_MS = 350;
 
 function resolvePrice(model) {
-  if (!model) return GENERIC_PRICE;
+  if (!model) return null;
   const key = model.toLowerCase();
   if (PRICES[key]) return PRICES[key];
-  for (const name in PRICES) if (name.includes(key) || key.includes(name)) return PRICES[name];
-  return GENERIC_PRICE;
+  for (const name in PRICES) {
+    const aliases = PRICES[name].aliases || [];
+    if (aliases.includes(key)) return PRICES[name];
+  }
+  let best = null, bestLen = -1;
+  for (const name in PRICES) {
+    if (key.startsWith(name) && name.length > bestLen) {
+      best = PRICES[name];
+      bestLen = name.length;
+    }
+  }
+  return best;
 }
 function costUsd(model, inTok, outTok) {
   const p = resolvePrice(model);
+  if (!p) return null;
   return inTok / 1e6 * p.in + outTok / 1e6 * p.out;
 }
 function latencyMs(model, outTok) {
   const p = resolvePrice(model);
-  return TURN_OVERHEAD_MS + (outTok / (p.tps || 60)) * 1000;
+  return TURN_OVERHEAD_MS + (outTok / ((p && p.tps) || DEFAULT_OUTPUT_TPS)) * 1000;
 }
 
 // ---- tokens.py (heuristic) ----
@@ -691,18 +720,19 @@ function turnContextTokens(t) {
   return total;
 }
 function buildTrace(c) {
-  const rows = []; let ctx = 0, cum = 0;
+  const modelKnown = resolvePrice(c.model) != null;
+  const rows = []; let ctx = 0, cum = modelKnown ? 0 : null;
   for (const t of c.turns) {
     const toolCalls = t.tool_calls.length;
     const toolFails = t.tool_calls.filter(x => x.ok === false).length;
-    let inTok = 0, outTok = 0, cost = 0, lat = 0;
+    let inTok = 0, outTok = 0, cost = modelKnown ? 0 : null, lat = 0;
     if (t.role === "assistant") {
       inTok = t.input_tokens != null ? t.input_tokens : ctx;
       outTok = turnOutputTokens(t);
       cost = costUsd(c.model, inTok, outTok);
       lat = t.latency_ms != null ? t.latency_ms : latencyMs(c.model, outTok);
     }
-    cum += cost;
+    if (cost != null && cum != null) cum += cost;
     rows.push({turn_index: t.index, role: t.role, input_tokens: inTok, output_tokens: outTok,
       tool_calls: toolCalls, tool_failures: toolFails, latency_ms: Math.round(lat * 10) / 10,
       cost_usd: cost, cumulative_cost_usd: cum, is_retry: t.is_retry, is_correction: t.is_correction});
@@ -721,7 +751,7 @@ function analyze(c) {
   const trace = buildTrace(c);
   const inTok = trace.reduce((s, r) => s + r.input_tokens, 0);
   const outTok = trace.reduce((s, r) => s + r.output_tokens, 0);
-  const cost = trace.reduce((s, r) => s + r.cost_usd, 0);
+  const cost = trace.some(r => r.cost_usd == null) ? null : trace.reduce((s, r) => s + r.cost_usd, 0);
   const lat = trace.reduce((s, r) => s + r.latency_ms, 0);
   const tcalls = trace.reduce((s, r) => s + r.tool_calls, 0);
   const tfails = trace.reduce((s, r) => s + r.tool_failures, 0);
@@ -751,8 +781,19 @@ function analyze(c) {
 function rankReports(rs) {
   return rs.slice().sort((a, b) =>
     (b.convergence_efficiency - a.convergence_efficiency) ||
-    (a.cost_estimate_usd - b.cost_estimate_usd) ||
+    compareNullableCost(a.cost_estimate_usd, b.cost_estimate_usd) ||
     (a.latency_estimate_ms - b.latency_estimate_ms));
+}
+
+function compareNullableCost(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a - b;
+}
+
+function formatCost(v, digits = 4) {
+  return v == null ? "n/a" : "$" + v.toFixed(digits);
 }
 
 /* ============================ UI ============================ */
@@ -792,7 +833,7 @@ const COLS = [
   {h: "Retries", k: "retry_loops"},
   {h: "Fixes", k: "correction_count"},
   {h: "Latency", k: "latency_estimate_ms", f: v => (v / 1000).toFixed(1) + "s"},
-  {h: "Cost", k: "cost_estimate_usd", f: v => "$" + v.toFixed(4)},
+  {h: "Cost", k: "cost_estimate_usd", f: v => formatCost(v)},
   {h: "Result", k: "_result", t: "result"},
   {h: "Efficiency", k: "convergence_efficiency", f: v => v.toFixed(3)},
 ];
@@ -814,7 +855,7 @@ function render() {
     else primary = sortDir * (av - bv);
     if (primary !== 0) return primary;
     // Stable tie-break matching the "most efficient" ranking: cost, then latency.
-    return (a.cost_estimate_usd - b.cost_estimate_usd) ||
+    return compareNullableCost(a.cost_estimate_usd, b.cost_estimate_usd) ||
            (a.latency_estimate_ms - b.latency_estimate_ms);
   });
   renderCards();
@@ -826,12 +867,15 @@ function render() {
 function renderCards() {
   if (!REPORTS.length) { $("#cards").innerHTML = ""; return; }
   const best = rankReports(REPORTS)[0];
-  const cheapest = REPORTS.reduce((a, b) => a.cost_estimate_usd <= b.cost_estimate_usd ? a : b);
+  const knownCosts = REPORTS.filter(r => r.cost_estimate_usd != null);
+  const cheapest = knownCosts.length
+    ? knownCosts.reduce((a, b) => a.cost_estimate_usd <= b.cost_estimate_usd ? a : b)
+    : null;
   const fastest = REPORTS.reduce((a, b) => a.latency_estimate_ms <= b.latency_estimate_ms ? a : b);
   const cards = [
     {label: "Agents compared", value: REPORTS.length, sub: "on task: " + REPORTS[0].task_id},
     {label: "Most efficient", value: best.agent, sub: "efficiency " + best.convergence_efficiency.toFixed(3)},
-    {label: "Cheapest", value: cheapest.agent, sub: "$" + cheapest.cost_estimate_usd.toFixed(4)},
+    {label: "Cheapest", value: cheapest ? cheapest.agent : "n/a", sub: cheapest ? formatCost(cheapest.cost_estimate_usd) : "unknown model prices"},
     {label: "Fastest", value: fastest.agent, sub: (fastest.latency_estimate_ms / 1000).toFixed(1) + "s est."},
   ];
   $("#cards").innerHTML = cards.map(c =>
@@ -858,9 +902,9 @@ function renderTable(rows) {
 }
 
 function bars(containerId, items, fmt) {
-  const max = Math.max(...items.map(i => i.value), 1e-9);
+  const max = Math.max(...items.map(i => i.value || 0), 1e-9);
   $(containerId).innerHTML = items.map(i => {
-    const pct = Math.max(2, (i.value / max) * 100);
+    const pct = Math.max(2, ((i.value || 0) / max) * 100);
     return `<div class="barrow"><span class="name" title="${i.name}">${i.name}</span>` +
       `<span class="bartrack"><span class="barfill" style="width:${pct}%"></span></span>` +
       `<span class="barval">${fmt(i.value)}</span></div>`;
@@ -869,7 +913,7 @@ function bars(containerId, items, fmt) {
 
 function renderCharts() {
   const by = k => REPORTS.map(r => ({name: r.agent, value: r[k] || 0}));
-  bars("#chart-cost", by("cost_estimate_usd").sort((a,b)=>b.value-a.value), v => "$" + v.toFixed(4));
+  bars("#chart-cost", REPORTS.map(r => ({name: r.agent, value: r.cost_estimate_usd})).sort((a,b)=>(b.value || 0)-(a.value || 0)), v => formatCost(v));
   bars("#chart-latency", by("latency_estimate_ms").sort((a,b)=>b.value-a.value), v => (v/1000).toFixed(1) + "s");
   bars("#chart-eff", by("convergence_efficiency").sort((a,b)=>b.value-a.value), v => v.toFixed(3));
   bars("#chart-tts", REPORTS.map(r => ({name: r.agent, value: r.tokens_to_success || 0})).sort((a,b)=>b.value-a.value),
@@ -898,7 +942,7 @@ function renderTrace() {
       `<td><span class="role ${r.role}">${r.role}</span></td>` +
       `<td>${r.input_tokens.toLocaleString()}</td><td>${r.output_tokens.toLocaleString()}</td>` +
       `<td>${r.tool_calls || "-"}</td><td>${(r.latency_ms/1000).toFixed(2)}s</td>` +
-      `<td>$${r.cost_usd.toFixed(5)}</td><td>$${r.cumulative_cost_usd.toFixed(5)}</td>` +
+      `<td>${formatCost(r.cost_usd, 5)}</td><td>${formatCost(r.cumulative_cost_usd, 5)}</td>` +
       `<td style="text-align:left">${flags || "<span class='hint'>—</span>"}</td></tr>`;
   }).join("") + "</tbody>";
   $("#trace-table").innerHTML = head + body;
@@ -906,7 +950,7 @@ function renderTrace() {
 
 function drawTraceChart(rep) {
   const W = 760, H = 150, pad = 28;
-  const pts = rep.trace.map(r => ({x: r.turn_index, y: r.cumulative_cost_usd}));
+  const pts = rep.trace.map(r => ({x: r.turn_index, y: r.cumulative_cost_usd || 0}));
   const maxX = Math.max(...pts.map(p => p.x), 1), maxY = Math.max(...pts.map(p => p.y), 1e-9);
   const sx = x => pad + (x / maxX) * (W - pad * 2);
   const sy = y => H - pad - (y / maxY) * (H - pad * 2);
@@ -915,7 +959,7 @@ function drawTraceChart(rep) {
   const dots = rep.trace.map(r => {
     const cx = sx(r.turn_index), cy = sy(r.cumulative_cost_usd);
     const color = r.is_correction ? "var(--warn)" : r.is_retry ? "var(--bad)" : "var(--accent)";
-    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.5" fill="${color}"><title>turn ${r.turn_index} · $${r.cumulative_cost_usd.toFixed(5)}</title></circle>`;
+    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.5" fill="${color}"><title>turn ${r.turn_index} · ${formatCost(r.cumulative_cost_usd, 5)}</title></circle>`;
   }).join("");
   $("#trace-chart").innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block">
@@ -996,7 +1040,7 @@ function startRace() {
         e.lane.classList.add("winner");
         banner.innerHTML = `🏁 <strong>${e.report.agent}</strong> takes the checkered flag — ` +
           `most efficient run (efficiency ${e.report.convergence_efficiency.toFixed(3)}, ` +
-          `$${e.report.cost_estimate_usd.toFixed(4)}, ${e.report.turns_to_success} turns to solve).`;
+          `${formatCost(e.report.cost_estimate_usd)}, ${e.report.turns_to_success} turns to solve).`;
       }
     }, Math.round(e.dur) + 70));
 }

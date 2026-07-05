@@ -25,7 +25,7 @@ except ImportError as exc:  # pragma: no cover - optional dependency
         "    pip install 'agenttracelab[dashboard]'"
     ) from exc
 
-from agenttracelab.analyzer import analyze, analyze_many
+from agenttracelab.analyzer import analyze_many
 from agenttracelab.parsers import load_conversations, parse_data
 from agenttracelab.report import rank_reports
 
@@ -34,13 +34,13 @@ _SAMPLE_DIR = os.path.join(
 )
 
 
-def _reports_dataframe(reports) -> "pd.DataFrame":
+def _reports_dataframe(reports) -> pd.DataFrame:
     rows = [r.summary_dict() for r in reports]
     df = pd.DataFrame(rows)
     return df
 
 
-def _trace_dataframe(reports) -> "pd.DataFrame":
+def _trace_dataframe(reports) -> pd.DataFrame:
     rows = []
     for rep in reports:
         for tr in rep.trace:
@@ -82,10 +82,10 @@ def main() -> None:
     cols = st.columns(4)
     cols[0].metric("Agents compared", len(reports))
     cols[1].metric("Most efficient", winner.agent, f"{winner.convergence_efficiency:.3f}")
-    cols[2].metric("Cheapest", min(reports, key=lambda r: r.cost_estimate_usd).agent)
-    cols[3].metric(
-        "Fastest", min(reports, key=lambda r: r.latency_estimate_ms).agent
-    )
+    priced = [r for r in reports if r.cost_estimate_usd is not None]
+    cheapest = min(priced, key=lambda r: r.cost_estimate_usd).agent if priced else "n/a"
+    cols[2].metric("Cheapest", cheapest)
+    cols[3].metric("Fastest", min(reports, key=lambda r: r.latency_estimate_ms).agent)
 
     st.subheader("Comparison")
     st.dataframe(df, use_container_width=True)

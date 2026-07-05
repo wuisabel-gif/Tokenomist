@@ -80,7 +80,7 @@ def test_openai_string_arguments_decoded():
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"function": {"name": "python", "arguments": "{\"code\": \"print(1)\"}"}}
+                    {"function": {"name": "python", "arguments": '{"code": "print(1)"}'}}
                 ],
             }
         ]

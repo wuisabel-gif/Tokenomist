@@ -4,6 +4,9 @@ Examples
 --------
     agenttracelab analyze data/samples/*.json
     agenttracelab analyze data/samples --json reports.json
+    agenttracelab analyze data/samples --prices my_prices.json
+    agenttracelab init-agents --out agents.json
+    agenttracelab route job.md --agents agents.json --out runs/job1
     agenttracelab trace data/samples --csv traces.csv
     agenttracelab formats
 """
@@ -12,11 +15,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import __version__
 from .analyzer import analyze_many
 from .parsers import available_formats, load_conversations
 from .report import rank_reports, render_table, reports_to_json, trace_to_csv
+from .router import load_agents, run_terminal_agent, write_example_config
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
@@ -32,6 +37,13 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Force a parser instead of auto-detecting.",
     )
+    parser.add_argument(
+        "--prices",
+        metavar="PATH",
+        default=None,
+        help="Path to a custom price book JSON (see the bundled prices.json). "
+        "Overrides the built-in prices so cost numbers stay current.",
+    )
 
 
 def _load(args: argparse.Namespace):
@@ -39,7 +51,12 @@ def _load(args: argparse.Namespace):
     if not conversations:
         print("No conversations found.", file=sys.stderr)
         raise SystemExit(2)
-    return analyze_many(conversations)
+    prices = None
+    if getattr(args, "prices", None):
+        from .pricing import PriceBook
+
+        prices = PriceBook.from_file(args.prices)
+    return analyze_many(conversations, prices)
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
@@ -72,6 +89,52 @@ def cmd_formats(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_init_agents(args: argparse.Namespace) -> int:
+    out = write_example_config(args.out)
+    print(f"Wrote starter agent config to {out}")
+    print("Edit the command arrays to match the terminal agents installed on your machine.")
+    return 0
+
+
+def cmd_route(args: argparse.Namespace) -> int:
+    job_path = str(args.job)
+    prompt = open(args.job, encoding="utf-8").read()
+    if args.extra_prompt:
+        prompt = prompt.rstrip() + "\n\n" + args.extra_prompt
+
+    success_command = args.success_command if args.success_command else None
+    out_paths = []
+    for agent in load_agents(args.agents):
+        print(f"Running {agent.name}...")
+        out_paths.append(
+            run_terminal_agent(
+                agent,
+                prompt,
+                task_id=args.task_id or Path(args.job).stem,
+                out_dir=args.out,
+                job_path=job_path,
+                success_regex=args.success_regex,
+                score_regex=args.score_regex,
+                success_command=success_command,
+            )
+        )
+
+    reports = rank_reports(analyze_many(load_conversations([str(args.out)])))
+    print()
+    print(render_table(reports))
+    if reports:
+        winner = reports[0]
+        print()
+        print(
+            "Recommendation: use "
+            f"{winner.agent} for this job type "
+            f"(efficiency {winner.convergence_efficiency:.3f}, "
+            f"cost {'n/a' if winner.cost_estimate_usd is None else f'${winner.cost_estimate_usd:.4f}'}, "
+            f"latency {winner.latency_estimate_ms / 1000:.1f}s)."
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agenttracelab",
@@ -97,6 +160,48 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_formats = sub.add_parser("formats", help="List supported log formats.")
     p_formats.set_defaults(func=cmd_formats)
+
+    p_init = sub.add_parser(
+        "init-agents",
+        help="Write a starter config for terminal agents such as Codex, Gemini, Claude, or Cursor.",
+    )
+    p_init.add_argument("--out", default="agents.json", help="Where to write the starter config.")
+    p_init.set_defaults(func=cmd_init_agents)
+
+    p_route = sub.add_parser(
+        "route",
+        help="Run one job through several configured terminal agents and recommend a winner.",
+    )
+    p_route.add_argument("job", help="Text/Markdown file describing the job to give every agent.")
+    p_route.add_argument(
+        "--agents",
+        required=True,
+        help="JSON config from init-agents, edited with your local agent commands.",
+    )
+    p_route.add_argument("--out", default="runs/route", help="Directory for native run logs.")
+    p_route.add_argument("--task-id", default=None, help="Task id for comparison grouping.")
+    p_route.add_argument(
+        "--extra-prompt",
+        default=None,
+        help="Additional instructions appended to the job before sending it to each agent.",
+    )
+    p_route.add_argument(
+        "--success-regex",
+        default=None,
+        help="Regex that must match agent output for the run to count as correct.",
+    )
+    p_route.add_argument(
+        "--score-regex",
+        default=None,
+        help="Regex with an optional first numeric capture group for final_score, e.g. 'score: ([0-9.]+)'.",
+    )
+    p_route.add_argument(
+        "--success-command",
+        nargs="+",
+        default=None,
+        help="Command run after each agent; exit code 0 marks the run correct, e.g. --success-command pytest -q.",
+    )
+    p_route.set_defaults(func=cmd_route)
 
     return parser
 

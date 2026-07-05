@@ -21,7 +21,7 @@ _COLUMNS = [
     ("Retries", "retry_loops", str),
     ("Fixes", "correction_count", str),
     ("Latency", "latency_estimate_ms", lambda v: f"{v / 1000:.1f}s"),
-    ("Cost", "cost_estimate_usd", lambda v: f"${v:.4f}"),
+    ("Cost", "cost_estimate_usd", lambda v: "n/a" if v is None else f"${v:.4f}"),
     ("Score", "final_score", lambda v: f"{v:.2f}"),
     ("Efficiency", "convergence_efficiency", lambda v: f"{v:.3f}"),
 ]
@@ -32,7 +32,12 @@ def rank_reports(reports: list[AgentReport]) -> list[AgentReport]:
 
     return sorted(
         reports,
-        key=lambda r: (-r.convergence_efficiency, r.cost_estimate_usd, r.latency_estimate_ms),
+        key=lambda r: (
+            -r.convergence_efficiency,
+            # Unknown-cost (n/a) reports rank after priced ones on the cost key.
+            float("inf") if r.cost_estimate_usd is None else r.cost_estimate_usd,
+            r.latency_estimate_ms,
+        ),
     )
 
 
@@ -75,9 +80,20 @@ def trace_to_csv(reports: list[AgentReport]) -> str:
 
     buf = io.StringIO()
     fieldnames = [
-        "task_id", "agent", "model", "turn_index", "role",
-        "input_tokens", "output_tokens", "tool_calls", "tool_failures",
-        "latency_ms", "cost_usd", "cumulative_cost_usd", "is_retry", "is_correction",
+        "task_id",
+        "agent",
+        "model",
+        "turn_index",
+        "role",
+        "input_tokens",
+        "output_tokens",
+        "tool_calls",
+        "tool_failures",
+        "latency_ms",
+        "cost_usd",
+        "cumulative_cost_usd",
+        "is_retry",
+        "is_correction",
     ]
     writer = csv.DictWriter(buf, fieldnames=fieldnames)
     writer.writeheader()

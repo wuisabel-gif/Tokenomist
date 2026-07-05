@@ -18,11 +18,7 @@ class NativeParser(Parser):
     name = "native"
 
     def can_parse(self, data: Any) -> bool:
-        return (
-            isinstance(data, dict)
-            and "turns" in data
-            and isinstance(data["turns"], list)
-        )
+        return isinstance(data, dict) and "turns" in data and isinstance(data["turns"], list)
 
     def parse(self, data: Any, source_path: str | None = None) -> Conversation:
         turns: list[Turn] = []

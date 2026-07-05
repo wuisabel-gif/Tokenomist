@@ -1,12 +1,35 @@
 # AgentTraceLab
 
+[![CI](https://github.com/wuisabel-gif/agent_race/actions/workflows/ci.yml/badge.svg)](https://github.com/wuisabel-gif/agent_race/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agenttracelab.svg)](https://pypi.org/project/agenttracelab/)
+[![Python versions](https://img.shields.io/pypi/pyversions/agenttracelab.svg)](https://pypi.org/project/agenttracelab/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Compare how different AI agents solve the same task — by cost, speed, accuracy, and reasoning efficiency.**
+
+📊 **[Try the live browser demo →](https://wuisabel-gif.github.io/agent_race/)** &nbsp;·&nbsp; no install, runs entirely in your browser.
+
+```bash
+pip install agenttracelab
+agenttracelab analyze data/samples
+```
 
 AgentTraceLab converts multi-turn AI conversations (ChatGPT, Gemini, Claude, the
 OpenAI Agents SDK, LangGraph, or your own custom agent) into **structured traffic
 traces**, then analyzes latency, token cost, tool-call patterns, retries, and
 convergence behavior. It turns a pile of raw conversation logs into an
 apples-to-apples leaderboard of agent systems on the same task.
+
+There are two common ways to use the repo:
+
+1. **Analyze logs you already have.** Drop JSON exports into a folder and run
+   `agenttracelab analyze <folder>`.
+2. **Route one job through terminal agents.** Configure commands for Codex,
+   Gemini, Claude, Cursor, or any local agent CLI, then run
+   `agenttracelab route job.md --agents agents.json`.
+3. **Generate measured benchmark logs.** Use `harness/run_agent.py` on a coding
+   task with hidden pytest tests, then analyze the logs it writes. This is the
+   path for reporting cost per *correct* solution.
 
 ```
 Agent            Model          Turns  →Success  In tok  Out tok  Tools  Tool OK  Retries  Fixes  Latency  Cost     Score  Efficiency
@@ -77,15 +100,23 @@ for a queueing model or datacenter simulator.
 ## Install
 
 ```bash
-pip install -e .                 # core library + CLI
-pip install -e ".[dashboard]"    # adds the Streamlit dashboard
-pip install -e ".[tokens]"       # adds tiktoken for exact token counts
-pip install -e ".[dev]"          # adds pytest
+pip install agenttracelab              # core library + CLI
+pip install "agenttracelab[dashboard]" # adds the Streamlit dashboard
+pip install "agenttracelab[tokens]"    # adds tiktoken for exact token counts
 ```
 
 The core library has **zero required dependencies**; `tiktoken`, `streamlit`,
 and `pandas` are optional. Without `tiktoken`, tokens are estimated with a
 deterministic ~4-chars/token heuristic.
+
+### From source (for development)
+
+```bash
+git clone https://github.com/wuisabel-gif/agent_race
+cd agent_race
+pip install -e ".[dev]"   # editable install with pytest + ruff
+pytest                    # run the test suite
+```
 
 ## Usage
 
@@ -99,9 +130,28 @@ agenttracelab analyze data/samples --json reports.json
 # Export the per-turn traffic trace as CSV
 agenttracelab trace data/samples --csv traces.csv
 
+# Use your own up-to-date price book instead of the bundled one
+agenttracelab analyze data/samples --prices my_prices.json
+
+# Create a terminal-agent config, then run the same job through every agent
+agenttracelab init-agents --out agents.json
+agenttracelab route job.md --agents agents.json --out runs/job1
+
 # List supported log formats
 agenttracelab formats
 ```
+
+### Pricing
+
+Model prices live in [`src/agenttracelab/prices.json`](src/agenttracelab/prices.json),
+not in code — each entry is a model *family* (a stable name prefix like
+`claude-sonnet-4-6`) plus input/output rates per million tokens, an optional
+cached-input rate, and a rough throughput for latency estimation. Lookup matches
+by longest family prefix, so dated model ids such as
+`claude-sonnet-4-6-20250514` still resolve. An **unknown model reports cost as
+`n/a`** rather than a fabricated number. Prices are approximate public list
+prices for *relative* comparison, verified `2026-07-04`; update the file (and
+bump `last_verified`) or pass `--prices` to keep them current.
 
 ### Dashboard
 
@@ -121,6 +171,97 @@ from agenttracelab.report import rank_reports, render_table
 reports = rank_reports(analyze_many(load_conversations(["data/samples"])))
 print(render_table(reports))
 ```
+
+## Route jobs through terminal agents
+
+This is the "which agent should I use?" workflow. You describe a job once, map
+each installed agent to a terminal command, and AgentTraceLab runs them all,
+captures native logs, analyzes the results, and prints a recommendation.
+
+```bash
+agenttracelab init-agents --out agents.json
+```
+
+Edit `agents.json` so each command matches the tools installed on your machine:
+
+```json
+{
+  "agents": [
+    {
+      "name": "Claude Code",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "command": ["claude", "-p", "{prompt}"]
+    },
+    {
+      "name": "Codex",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "command": ["codex", "exec", "{prompt}"]
+    },
+    {
+      "name": "Gemini CLI",
+      "provider": "google",
+      "model": "gemini-3.1-pro",
+      "command": ["gemini", "-p", "{prompt}"]
+    },
+    {
+      "name": "Cursor Agent",
+      "provider": "cursor",
+      "model": "cursor-agent",
+      "command": ["cursor-agent", "--print", "{prompt}"]
+    }
+  ]
+}
+```
+
+Then write a job:
+
+```markdown
+# Job
+
+Fix the failing tests in this repo. Explain what changed and stop when tests pass.
+```
+
+Run every configured agent on that same job:
+
+```bash
+agenttracelab route job.md --agents agents.json --out runs/fix-tests \
+  --success-regex "tests pass|DONE|fixed"
+```
+
+For coding work, use an objective success command when possible:
+
+```bash
+agenttracelab route job.md --agents agents.json --out runs/fix-tests \
+  --success-command pytest -q
+```
+
+That turns the repo into a terminal decision layer: compare Codex vs Gemini vs
+Claude vs Cursor on your actual task shape, then choose the agent with the best
+mix of correctness, cost, latency, and retry behavior. The command adapter is
+generic on purpose — if a tool can be called non-interactively from your
+terminal, it can be plugged in.
+
+## Capture your own agent runs
+
+The [`harness/`](harness) directory has a provider-agnostic runner that solves a
+coding task against any OpenAI-compatible model (Z.ai/GLM, DeepSeek, OpenAI, …)
+with a test-feedback loop, capturing **real token usage and latency** into a
+native-format log:
+
+```bash
+pip install -e ".[capture]"
+python harness/run_agent.py --task harness/tasks/merge_intervals \
+  --out runs/demo.json --model glm-5.1 --mock   # offline demo, no API key
+agenttracelab analyze runs
+```
+
+Because each task ships a hidden pytest suite as ground truth, you get objective
+**correctness** alongside the tool's efficiency metrics — enough to rank agents
+by *cost per correct solution*. See [`harness/README.md`](harness/README.md) for
+endpoint presets and the four-agent recipe, and
+[`docs/case-study.md`](docs/case-study.md) for a write-up scaffold.
 
 ## Supported formats
 
@@ -143,13 +284,16 @@ in the browser demo under “How should my logs look?”).
 src/agenttracelab/
   models.py        normalized Conversation / Turn / ToolCall
   tokens.py        token estimation (tiktoken or heuristic)
-  pricing.py       per-model price book + latency model
+  pricing.py       price-book loader + latency model (prefix/family matching)
+  prices.json      editable price book (per-model rates, verified 2026-07-04)
   parsers/         format detection + one parser per format
   analyzer.py      trace construction + aggregate metrics
   report.py        table / JSON / CSV rendering and ranking
   cli.py           command-line interface
   dashboard.py     Streamlit dashboard (optional)
 data/samples/      example logs, one per format
+harness/           capture runner + example pytest-backed task
+docs/              case-study scaffold for reporting results
 tests/             pytest suite
 ```
 
