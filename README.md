@@ -317,6 +317,20 @@ the agent with the best mix of correctness, cost, latency, and retry behavior.
 The command adapter is generic on purpose — if a tool can be called
 non-interactively from your terminal, it can be plugged in.
 
+## Research reference
+
+The strong/weak routing calibration is inspired by:
+
+> Isaac Ong, Amjad Almahairi, Vincent Wu, Wei-Lin Chiang, Tianhao Wu,
+> Joseph E. Gonzalez, M. Waleed Kadous, and Ion Stoica.
+> **RouteLLM: Learning to Route LLMs with Preference Data.**
+> ICLR 2025. arXiv:2406.18665.
+
+Tokenomist does not train a RouteLLM router. It adapts the paper's practical
+cost-quality framing — weak model, strong model, performance gap recovered, and
+call-performance threshold — to terminal-agent logs with objective success
+checks.
+
 ## Capture your own agent runs
 
 The [`harness/`](harness) directory has a provider-agnostic runner that solves a
