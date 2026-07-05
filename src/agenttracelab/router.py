@@ -69,7 +69,8 @@ def load_agents(path: str | Path) -> list[TerminalAgent]:
     for item in data.get("agents", []):
         command = item.get("command")
         if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
-            raise ValueError(f"Agent {item.get('name', '<unnamed>')} needs command as a list of strings.")
+            name = item.get("name", "<unnamed>")
+            raise ValueError(f"Agent {name} needs command as a list of strings.")
         agents.append(
             TerminalAgent(
                 name=str(item["name"]),
@@ -88,8 +89,7 @@ def load_agents(path: str | Path) -> list[TerminalAgent]:
 
 def _format_command(command: list[str], prompt: str, job_path: str | None) -> list[str]:
     return [
-        part.replace("{prompt}", prompt).replace("{job_path}", job_path or "")
-        for part in command
+        part.replace("{prompt}", prompt).replace("{job_path}", job_path or "") for part in command
     ]
 
 
@@ -147,7 +147,9 @@ def run_terminal_agent(
         command_ok = proc.returncode == 0
     except subprocess.TimeoutExpired as exc:
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-        output = f"Timed out after {agent.timeout_sec}s.\n{exc.stdout or ''}\n{exc.stderr or ''}".strip()
+        output = (
+            f"Timed out after {agent.timeout_sec}s.\n{exc.stdout or ''}\n{exc.stderr or ''}"
+        ).strip()
         command_ok = False
 
     checks: list[dict[str, Any]] = [

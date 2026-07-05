@@ -1,8 +1,7 @@
 # AgentTraceLab
 
 [![CI](https://github.com/wuisabel-gif/agent_race/actions/workflows/ci.yml/badge.svg)](https://github.com/wuisabel-gif/agent_race/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/agenttracelab.svg)](https://pypi.org/project/agenttracelab/)
-[![Python versions](https://img.shields.io/pypi/pyversions/agenttracelab.svg)](https://pypi.org/project/agenttracelab/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Compare how different AI agents solve the same task — by cost, speed, accuracy, and reasoning efficiency.**
@@ -10,7 +9,7 @@
 📊 **[Try the live browser demo →](https://wuisabel-gif.github.io/agent_race/)** &nbsp;·&nbsp; no install, runs entirely in your browser.
 
 ```bash
-pip install agenttracelab
+pip install -e .
 agenttracelab analyze data/samples
 ```
 
@@ -100,9 +99,9 @@ for a queueing model or datacenter simulator.
 ## Install
 
 ```bash
-pip install agenttracelab              # core library + CLI
-pip install "agenttracelab[dashboard]" # adds the Streamlit dashboard
-pip install "agenttracelab[tokens]"    # adds tiktoken for exact token counts
+pip install -e .              # core library + CLI
+pip install -e ".[dashboard]" # adds the Streamlit dashboard
+pip install -e ".[tokens]"    # adds tiktoken for exact token counts
 ```
 
 The core library has **zero required dependencies**; `tiktoken`, `streamlit`,

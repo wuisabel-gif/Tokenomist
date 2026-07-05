@@ -124,12 +124,13 @@ def cmd_route(args: argparse.Namespace) -> int:
     print(render_table(reports))
     if reports:
         winner = reports[0]
+        cost = "n/a" if winner.cost_estimate_usd is None else f"${winner.cost_estimate_usd:.4f}"
         print()
         print(
             "Recommendation: use "
             f"{winner.agent} for this job type "
             f"(efficiency {winner.convergence_efficiency:.3f}, "
-            f"cost {'n/a' if winner.cost_estimate_usd is None else f'${winner.cost_estimate_usd:.4f}'}, "
+            f"cost {cost}, "
             f"latency {winner.latency_estimate_ms / 1000:.1f}s)."
         )
     return 0
@@ -193,13 +194,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_route.add_argument(
         "--score-regex",
         default=None,
-        help="Regex with an optional first numeric capture group for final_score, e.g. 'score: ([0-9.]+)'.",
+        help=(
+            "Regex with an optional first numeric capture group for final_score, "
+            "e.g. 'score: ([0-9.]+)'."
+        ),
     )
     p_route.add_argument(
         "--success-command",
         nargs="+",
         default=None,
-        help="Command run after each agent; exit code 0 marks the run correct, e.g. --success-command pytest -q.",
+        help=(
+            "Command run after each agent; exit code 0 marks the run correct, "
+            "e.g. --success-command pytest -q."
+        ),
     )
     p_route.set_defaults(func=cmd_route)
 
