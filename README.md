@@ -24,7 +24,7 @@ There are two common ways to use the repo:
 1. **Analyze logs you already have.** Drop JSON exports into a folder and run
    `agenttracelab analyze <folder>`.
 2. **Route one job through terminal agents.** Configure commands for Codex,
-   Gemini, Claude, Cursor, or any local agent CLI, then run
+   Gemini, Claude, Zhipu/GLM, DeepSeek, Cursor, or any local agent CLI, then run
    `agenttracelab route job.md --agents agents.json`.
 3. **Generate measured benchmark logs.** Use `harness/run_agent.py` on a coding
    task with hidden pytest tests, then analyze the logs it writes. This is the
@@ -205,6 +205,18 @@ Edit `agents.json` so each command matches the tools installed on your machine:
       "command": ["gemini", "-p", "{prompt}"]
     },
     {
+      "name": "Zhipu GLM",
+      "provider": "zai",
+      "model": "glm-5.1",
+      "command": ["zai", "chat", "--model", "glm-5.1", "{prompt}"]
+    },
+    {
+      "name": "DeepSeek",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "command": ["deepseek", "chat", "--model", "deepseek-chat", "{prompt}"]
+    },
+    {
       "name": "Cursor Agent",
       "provider": "cursor",
       "model": "cursor-agent",
@@ -213,6 +225,10 @@ Edit `agents.json` so each command matches the tools installed on your machine:
   ]
 }
 ```
+
+The command names above are examples. If you call Zhipu or DeepSeek through a
+different wrapper, local script, OpenAI-compatible proxy, or company CLI, keep
+the `name` / `model` fields and change only the `command` array.
 
 Then write a job:
 
@@ -237,10 +253,10 @@ agenttracelab route job.md --agents agents.json --out runs/fix-tests \
 ```
 
 That turns the repo into a terminal decision layer: compare Codex vs Gemini vs
-Claude vs Cursor on your actual task shape, then choose the agent with the best
-mix of correctness, cost, latency, and retry behavior. The command adapter is
-generic on purpose — if a tool can be called non-interactively from your
-terminal, it can be plugged in.
+Claude vs Zhipu/GLM vs DeepSeek vs Cursor on your actual task shape, then choose
+the agent with the best mix of correctness, cost, latency, and retry behavior.
+The command adapter is generic on purpose — if a tool can be called
+non-interactively from your terminal, it can be plugged in.
 
 ## Capture your own agent runs
 

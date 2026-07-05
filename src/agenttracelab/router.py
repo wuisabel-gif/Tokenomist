@@ -47,6 +47,18 @@ def example_config() -> dict[str, Any]:
                 "command": ["gemini", "-p", "{prompt}"],
             },
             {
+                "name": "Zhipu GLM",
+                "provider": "zai",
+                "model": "glm-5.1",
+                "command": ["zai", "chat", "--model", "glm-5.1", "{prompt}"],
+            },
+            {
+                "name": "DeepSeek",
+                "provider": "deepseek",
+                "model": "deepseek-v4-pro",
+                "command": ["deepseek", "chat", "--model", "deepseek-chat", "{prompt}"],
+            },
+            {
                 "name": "Cursor Agent",
                 "provider": "cursor",
                 "model": "cursor-agent",
