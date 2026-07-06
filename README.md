@@ -13,7 +13,7 @@ same task (or import logs you already have), and get an apples-to-apples
 leaderboard of correctness, cost, latency, retries, and efficiency — including
 the number most comparisons skip, **cost per correct solution**.
 
-📊 **[Try the live browser demo →](https://wuisabel-gif.github.io/tokenomist/)** &nbsp;·&nbsp; no install, runs entirely in your browser.
+📊 **[Try the live browser demo →](https://wuisabel-gif.github.io/Tokenomist/)** &nbsp;·&nbsp; no install, runs entirely in your browser.
 
 ```bash
 pip install -e .
