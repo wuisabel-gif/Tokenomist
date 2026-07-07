@@ -3,20 +3,23 @@
 Prices live in a data file (:data:`prices.json` next to this module) rather than
 in code, so they can be updated without touching logic and overridden per run.
 Each entry is a *family* — a stable model-name prefix such as ``claude-sonnet-4-6``
-— plus USD-per-million-token input/output rates, an optional cached-input rate,
-and a rough output throughput used to estimate latency when a log has no
-timestamps. The numbers are approximate public list prices meant for *relative*
-comparison between agents, not for billing.
+— plus aliases, optional regex match patterns, USD-per-million-token
+input/output rates, an optional cached-input rate, and a rough output throughput
+used to estimate latency when a log has no timestamps. The numbers are
+approximate public list prices meant for *relative* comparison between agents,
+not for billing.
 
-Model names in real logs carry dated suffixes (``claude-sonnet-4-6-20250514``),
-so lookup matches by longest family prefix, falling back to short aliases and
-finally to ``None`` — an unknown model yields ``cost = n/a`` rather than a
+Model names in real logs carry dated suffixes, provider prefixes, and endpoint
+aliases (``claude-sonnet-4-6-20250514``, ``zhipu/glm-5.1``,
+``deepseek-chat``), so lookup matches exact ids/aliases, longest family prefix,
+then regex match patterns. An unknown model yields ``cost = n/a`` rather than a
 silently fabricated number.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,10 +46,13 @@ class ModelPrice:
     cache_read_per_mtok: float | None = None
     provider: str | None = None
     family: str | None = None
+    match_patterns: tuple[str, ...] = ()
 
 
-def _load_price_records(path: str | Path | None = None) -> tuple[dict[str, ModelPrice], float]:
-    """Return ``(family/alias -> ModelPrice, default_tps)`` from a JSON file.
+def _load_price_records(
+    path: str | Path | None = None,
+) -> tuple[dict[str, ModelPrice], list[tuple[re.Pattern[str], ModelPrice]], float]:
+    """Return ``(family/alias table, regex matchers, default_tps)`` from JSON.
 
     When ``path`` is ``None`` the price book bundled with the package is used.
     """
@@ -62,8 +68,10 @@ def _load_price_records(path: str | Path | None = None) -> tuple[dict[str, Model
     default_tps = float(data.get("default_output_tokens_per_sec", _DEFAULT_OUTPUT_TPS))
 
     table: dict[str, ModelPrice] = {}
+    matchers: list[tuple[re.Pattern[str], ModelPrice]] = []
     for rec in data.get("models", []):
         family = str(rec["family"]).lower()
+        patterns = tuple(str(pattern) for pattern in rec.get("match_patterns", []) or [])
         price = ModelPrice(
             input_per_mtok=float(rec["input"]),
             output_per_mtok=float(rec["output"]),
@@ -73,15 +81,18 @@ def _load_price_records(path: str | Path | None = None) -> tuple[dict[str, Model
             ),
             provider=rec.get("provider"),
             family=family,
+            match_patterns=patterns,
         )
         table[family] = price
         for alias in rec.get("aliases", []):
             table.setdefault(str(alias).lower(), price)
-    return table, default_tps
+        for pattern in patterns:
+            matchers.append((re.compile(pattern, flags=re.IGNORECASE), price))
+    return table, matchers, default_tps
 
 
 # Bundled default price book, exposed for inspection and tests.
-DEFAULT_PRICES, _DEFAULT_TPS = _load_price_records()
+DEFAULT_PRICES, _DEFAULT_MATCHERS, _DEFAULT_TPS = _load_price_records()
 
 
 class PriceBook:
@@ -91,20 +102,24 @@ class PriceBook:
         # An explicit dict (e.g. from tests or a caller) is used as-is; otherwise
         # the bundled default price book is loaded.
         self._prices = dict(DEFAULT_PRICES if prices is None else prices)
+        self._matchers = list(_DEFAULT_MATCHERS if prices is None else [])
 
     @classmethod
     def from_file(cls, path: str | Path) -> PriceBook:
         """Build a price book from a user-supplied JSON file (see prices.json)."""
 
-        table, _ = _load_price_records(path)
-        return cls(table)
+        table, matchers, _ = _load_price_records(path)
+        book = cls(table)
+        book._matchers = matchers
+        return book
 
     def resolve(self, model: str | None) -> ModelPrice | None:
         """Return the price for ``model``, or ``None`` if it is unknown.
 
         Matching order: exact (case-insensitive) id/alias, then the longest
         known family that is a prefix of the model name (so dated suffixes like
-        ``-20250514`` still match), then ``None``.
+        ``-20250514`` still match), then regex match patterns from the price
+        catalog, then ``None``.
         """
 
         if not model:
@@ -114,12 +129,20 @@ class PriceBook:
         if exact is not None:
             return exact
 
-        # Longest family that is a prefix of the queried model name wins.
+        # Longest canonical family that is a prefix of the queried model name
+        # wins. Short aliases are exact-match only; otherwise an alias like
+        # "deepseek" would swallow provider strings before regex patterns run.
         best: ModelPrice | None = None
         best_len = -1
         for name, price in self._prices.items():
-            if key.startswith(name) and len(name) > best_len:
+            if name == price.family and key.startswith(name) and len(name) > best_len:
                 best, best_len = price, len(name)
+        if best is not None:
+            return best
+
+        for pattern, price in self._matchers:
+            if pattern.search(model.strip()):
+                return price
         return best
 
     def is_known(self, model: str | None) -> bool:

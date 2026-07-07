@@ -54,13 +54,16 @@ The price book lives in [`src/tokenomist/prices.json`](src/tokenomist/prices.jso
 and covers current models across Anthropic, OpenAI, Google, Z.ai (GLM),
 DeepSeek, Mistral, MiniMax, Qwen, and Llama, plus retained legacy ids.
 
-Matching is by **longest family prefix**, so a dated id like
-`claude-sonnet-4-6-20250514` resolves to the `claude-sonnet-4-6` family, and
-short aliases (`claude-sonnet`, `glm-5.1`, `gpt-5`) resolve to a current model.
-An **unknown model reports cost as `n/a`** rather than a fabricated rate. Prices
-are approximate public list rates for *relative* comparison, not billing;
-override them with your own file via `--prices` (CLI) or `PriceBook.from_file()`
-(library). See the price book for the full, current list of ids.
+Matching is by exact id/alias, then **longest family prefix**, then optional
+regex `match_patterns`, so a dated id like `claude-sonnet-4-6-20250514`
+resolves to the `claude-sonnet-4-6` family, short aliases (`claude-sonnet`,
+`glm-5.1`, `gpt-5`) resolve to a current model, and provider strings like
+`zhipu/glm-5.1` or `deepseek/deepseek-chat` can be matched without hardcoding
+every variant. An **unknown model reports cost as `n/a`** rather than a
+fabricated rate. Prices are approximate public list rates for *relative*
+comparison, not billing; override them with your own file via `--prices` (CLI)
+or `PriceBook.from_file()` (library). See the price book for the full, current
+list of ids.
 
 ---
 
