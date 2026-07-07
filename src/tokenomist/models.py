@@ -56,6 +56,10 @@ class Turn:
     content: str = ""
     input_tokens: int | None = None
     output_tokens: int | None = None
+    usage_details: dict[str, int] = field(default_factory=dict)
+    provided_usage_details: dict[str, int] = field(default_factory=dict)
+    cost_details: dict[str, float] = field(default_factory=dict)
+    provided_cost_details: dict[str, float] = field(default_factory=dict)
     tool_calls: list[ToolCall] = field(default_factory=list)
     latency_ms: float | None = None
     timestamp: float | None = None

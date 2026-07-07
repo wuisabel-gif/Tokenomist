@@ -73,10 +73,31 @@ def test_json_and_csv_export():
     reports = analyze_many(load_conversations([SAMPLE_DIR]))
     js = reports_to_json(reports)
     assert "convergence_efficiency" in js
+    assert "usage_details" in js
     csv_text = trace_to_csv(reports)
     assert "cumulative_cost_usd" in csv_text
+    assert "usage_details" in csv_text
     # One header line + at least one row per turn across all conversations.
     assert len(csv_text.strip().splitlines()) > len(reports)
+
+
+def test_usage_and_cost_detail_maps_are_aggregated():
+    conv = load_conversation(os.path.join(SAMPLE_DIR, "custom_agent_native.json"))
+    conv.turns[1].usage_details = {
+        "input_tokens": 1000,
+        "cached_input_tokens": 200,
+        "output_tokens": 100,
+    }
+    conv.turns[1].provided_usage_details = {
+        "input_tokens": 1001,
+        "cached_input_tokens": 201,
+        "output_tokens": 99,
+    }
+
+    rep = analyze(conv)
+    assert rep.usage_details["cached_input_tokens"] == 200
+    assert rep.provided_usage_details["cached_input_tokens"] == 201
+    assert set(rep.cost_details) >= {"input", "output", "cache_read"}
 
 
 def test_empty_table():

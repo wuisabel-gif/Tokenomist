@@ -87,10 +87,14 @@ def trace_to_csv(reports: list[AgentReport]) -> str:
         "role",
         "input_tokens",
         "output_tokens",
+        "usage_details",
+        "provided_usage_details",
         "tool_calls",
         "tool_failures",
         "latency_ms",
         "cost_usd",
+        "cost_details",
+        "provided_cost_details",
         "cumulative_cost_usd",
         "is_retry",
         "is_correction",
@@ -99,5 +103,11 @@ def trace_to_csv(reports: list[AgentReport]) -> str:
     writer.writeheader()
     for rep in reports:
         for row in rep.trace:
-            writer.writerow({k: getattr(row, k) for k in fieldnames})
+            rendered = {}
+            for key in fieldnames:
+                value = getattr(row, key)
+                rendered[key] = (
+                    json.dumps(value, sort_keys=True) if isinstance(value, dict) else value
+                )
+            writer.writerow(rendered)
     return buf.getvalue()

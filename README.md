@@ -98,6 +98,8 @@ a ready-made input for a queueing model or datacenter simulator.
 | `correction_count` | Times the user had to redirect the agent |
 | `latency_estimate_ms` | Throughput-modeled generation latency |
 | `cost_estimate_usd` | Token cost using a configurable price book |
+| `usage_details`, `cost_details` | Open-ended usage/cost maps derived by Tokenomist |
+| `provided_usage_details`, `provided_cost_details` | Provider-reported usage/cost maps kept for drift audits |
 | `convergence_efficiency` | 0–1: correct answers reached with the least budget and fewest corrections |
 
 ## Install
@@ -168,10 +170,13 @@ tokenomist formats
 
 Model prices live in [`src/tokenomist/prices.json`](src/tokenomist/prices.json),
 not in code — each entry is a model *family* (a stable name prefix like
-`claude-sonnet-4-6`) plus input/output rates per million tokens, an optional
-cached-input rate, and a rough throughput for latency estimation. Lookup matches
-by longest family prefix, so dated model ids such as
-`claude-sonnet-4-6-20250514` still resolve. An **unknown model reports cost as
+`claude-sonnet-4-6`) plus input/output/cache-read rates per million tokens,
+aliases, and a rough throughput for latency estimation. Lookup matches by
+longest family prefix, so dated model ids such as
+`claude-sonnet-4-6-20250514` still resolve. Tokenomist stores derived
+`usage_details` / `cost_details` maps separately from provider-reported
+`provided_usage_details` / `provided_cost_details`, so reports can surface usage
+or billing drift instead of overwriting it. An **unknown model reports cost as
 `n/a`** rather than a fabricated number. Prices are approximate public list
 prices for *relative* comparison, verified `2026-07-04`; update the file (and
 bump `last_verified`) or pass `--prices` to keep them current.

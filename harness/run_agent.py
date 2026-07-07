@@ -59,6 +59,37 @@ _PYTEST_FAIL = re.compile(r"(\d+) failed")
 _PYTEST_ERROR = re.compile(r"(\d+) error")
 
 
+def _usage_details(prompt_tokens: int, completion_tokens: int) -> dict[str, int]:
+    return {
+        "input_tokens": int(prompt_tokens or 0),
+        "output_tokens": int(completion_tokens or 0),
+        "total_tokens": int((prompt_tokens or 0) + (completion_tokens or 0)),
+    }
+
+
+def _provider_usage_details(usage) -> dict[str, int]:
+    if usage is None:
+        return {}
+    raw = usage.model_dump() if hasattr(usage, "model_dump") else dict(usage)
+    details = _usage_details(
+        int(raw.get("prompt_tokens") or 0),
+        int(raw.get("completion_tokens") or 0),
+    )
+    details["total_tokens"] = int(raw.get("total_tokens") or details["total_tokens"])
+
+    prompt_details = raw.get("prompt_tokens_details") or {}
+    completion_details = raw.get("completion_tokens_details") or {}
+    if cached := prompt_details.get("cached_tokens"):
+        details["cached_input_tokens"] = int(cached)
+    if audio := prompt_details.get("audio_tokens"):
+        details["input_audio_tokens"] = int(audio)
+    if reasoning := completion_details.get("reasoning_tokens"):
+        details["reasoning_tokens"] = int(reasoning)
+    if audio := completion_details.get("audio_tokens"):
+        details["output_audio_tokens"] = int(audio)
+    return details
+
+
 def _extract_code(reply: str) -> str | None:
     """Return the last fenced code block in a model reply, or None."""
     blocks = _CODE_FENCE.findall(reply)
@@ -111,7 +142,12 @@ class _MockClient:
             reply = f"```python\n{body}```"
         prompt_tokens = sum(len(m["content"]) for m in messages) // 4
         completion_tokens = max(1, len(reply) // 4)
-        return reply, prompt_tokens, completion_tokens
+        return (
+            reply,
+            prompt_tokens,
+            completion_tokens,
+            _usage_details(prompt_tokens, completion_tokens),
+        )
 
 
 class _OpenAICompatClient:
@@ -145,7 +181,7 @@ class _OpenAICompatClient:
         usage = resp.usage
         prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
         completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
-        return reply, prompt_tokens, completion_tokens
+        return reply, prompt_tokens, completion_tokens, _provider_usage_details(usage)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -185,7 +221,7 @@ def run(args: argparse.Namespace) -> int:
 
     for attempt in range(1, args.max_turns + 1):
         t0 = time.perf_counter()
-        reply, in_tok, out_tok = client.complete(messages)
+        reply, in_tok, out_tok, provider_usage_details = client.complete(messages)
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
         messages.append({"role": "assistant", "content": reply})
 
@@ -219,6 +255,8 @@ def run(args: argparse.Namespace) -> int:
                 "content": reply,
                 "input_tokens": in_tok,
                 "output_tokens": out_tok,
+                "usage_details": _usage_details(in_tok, out_tok),
+                "provided_usage_details": provider_usage_details,
                 "latency_ms": latency_ms,
                 "tool_calls": tool_calls,
                 "is_retry": attempt > 1,

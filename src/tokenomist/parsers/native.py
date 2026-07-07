@@ -14,6 +14,34 @@ from ..models import Conversation, Role, ToolCall, Turn
 from .base import Parser, coerce_text, looks_like_correction, looks_like_retry, normalize_role
 
 
+def _int_map(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool):
+            continue
+        try:
+            out[str(key)] = int(raw)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _float_map(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool):
+            continue
+        try:
+            out[str(key)] = float(raw)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 class NativeParser(Parser):
     name = "native"
 
@@ -32,6 +60,10 @@ class NativeParser(Parser):
                 content=text,
                 input_tokens=raw.get("input_tokens"),
                 output_tokens=raw.get("output_tokens"),
+                usage_details=_int_map(raw.get("usage_details")),
+                provided_usage_details=_int_map(raw.get("provided_usage_details")),
+                cost_details=_float_map(raw.get("cost_details")),
+                provided_cost_details=_float_map(raw.get("provided_cost_details")),
                 tool_calls=tool_calls,
                 latency_ms=raw.get("latency_ms"),
                 timestamp=raw.get("timestamp"),

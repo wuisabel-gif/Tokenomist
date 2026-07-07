@@ -71,10 +71,20 @@ override them with your own file via `--prices` (CLI) or `PriceBook.from_file()`
 | `role` (or `type` for LangGraph) | string | `user` / `assistant` / `tool` / `system`. LangGraph uses `human` / `ai` / `tool` / `system`. |
 | `content` | string | The message text. |
 | `input_tokens`, `output_tokens` | int | Optional. If omitted, estimated from the text (~4 chars/token, or tiktoken if installed in the Python lib). |
+| `usage_details` | object | Optional Tokenomist-normalized usage map. Use open-ended keys such as `input_tokens`, `output_tokens`, `cached_input_tokens`, `reasoning_tokens`, or provider-specific dimensions. |
+| `provided_usage_details` | object | Optional provider-reported usage map copied from the API response. Kept separate from Tokenomist-derived usage so drift can be audited. |
+| `cost_details` | object | Optional Tokenomist-normalized cost map in USD, e.g. `{ "input": 0.01, "output": 0.02, "cache_read": 0.001 }`. If omitted and the model is known, Tokenomist derives it from `usage_details`. |
+| `provided_cost_details` | object | Optional provider-reported cost map in USD. Kept separate from derived cost for provenance and comparison. |
 | `latency_ms` | number | Optional. If omitted, estimated from output tokens. |
 | `tool_calls` | array | Optional. See below. |
 | `is_correction` | bool | Optional. Marks a **user** turn that corrected the agent. Auto-detected from phrasing (`"no, that's wrong"`, `"try again"`, …) if omitted. |
 | `is_retry` | bool | Optional. Marks an **assistant** turn that retried after a failure. Auto-detected if omitted. |
+
+`input_tokens` and `output_tokens` remain as convenience fields for older logs
+and table output. New capture integrations should prefer `usage_details` and
+`provided_usage_details` so emerging token types do not require a schema change.
+Tokenomist reports both aggregate maps in JSON output and includes them in trace
+CSV exports.
 
 ### Tool call object
 
@@ -110,7 +120,8 @@ Detection key: **native** has `turns`; **LangGraph** has `messages[].type`;
     { "role": "assistant", "content": "Reading the handler.",
       "tool_calls": [ { "name": "read_file", "arguments": { "path": "login.js" }, "ok": true } ] },
     { "role": "assistant", "content": "Added a guard for empty email; tests pass.",
-      "output_tokens": 40 }
+      "usage_details": { "input_tokens": 1200, "output_tokens": 40 },
+      "provided_usage_details": { "input_tokens": 1201, "output_tokens": 39, "total_tokens": 1240 } }
   ]
 }
 ```

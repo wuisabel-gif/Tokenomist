@@ -66,6 +66,18 @@ def test_cost_scales_with_output():
     assert pricier > cheap
 
 
+def test_cost_details_include_cache_read():
+    book = PriceBook()
+    details = book.cost_details_usd(
+        "gpt-4o",
+        {"input_tokens": 1000, "cached_input_tokens": 200, "output_tokens": 100},
+    )
+    assert details is not None
+    assert details["input"] == 800 / 1_000_000 * 2.5
+    assert details["cache_read"] == 200 / 1_000_000 * 1.25
+    assert details["output"] == 100 / 1_000_000 * 10.0
+
+
 def test_latency_grows_with_output():
     book = PriceBook()
     assert book.latency_ms("gpt-4o", 1000) > book.latency_ms("gpt-4o", 10)

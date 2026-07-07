@@ -128,13 +128,40 @@ class PriceBook:
     def cost_usd(self, model: str | None, input_tokens: int, output_tokens: int) -> float | None:
         """Token cost in USD, or ``None`` when the model's price is unknown."""
 
+        details = self.cost_details_usd(
+            model,
+            {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
+        )
+        return None if details is None else sum(details.values())
+
+    def cost_details_usd(
+        self, model: str | None, usage_details: dict[str, int]
+    ) -> dict[str, float] | None:
+        """Cost map in USD by usage dimension, or ``None`` for unknown models."""
+
         price = self.resolve(model)
         if price is None:
             return None
-        return (
-            input_tokens / 1_000_000 * price.input_per_mtok
-            + output_tokens / 1_000_000 * price.output_per_mtok
+
+        details: dict[str, float] = {}
+        input_tokens = usage_details.get("input_tokens", 0)
+        output_tokens = usage_details.get("output_tokens", 0)
+        cached_tokens = usage_details.get("cached_input_tokens", 0) + usage_details.get(
+            "cache_read_input_tokens", 0
         )
+
+        billable_input_tokens = max(0, input_tokens - cached_tokens)
+        if billable_input_tokens:
+            details["input"] = billable_input_tokens / 1_000_000 * price.input_per_mtok
+        if output_tokens:
+            details["output"] = output_tokens / 1_000_000 * price.output_per_mtok
+        if cached_tokens and price.cache_read_per_mtok is not None:
+            details["cache_read"] = cached_tokens / 1_000_000 * price.cache_read_per_mtok
+
+        return details
 
     def latency_ms(self, model: str | None, output_tokens: int) -> float:
         """Estimate generation latency from output token count.

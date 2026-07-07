@@ -103,6 +103,27 @@ def test_correction_and_retry_detection():
     assert conv.turns[1].is_retry is True
 
 
+def test_native_parser_preserves_usage_and_cost_maps():
+    data = {
+        "turns": [
+            {
+                "role": "assistant",
+                "content": "done",
+                "usage_details": {"input_tokens": 10, "reasoning_tokens": 2},
+                "provided_usage_details": {"input_tokens": 11},
+                "cost_details": {"input": 0.01},
+                "provided_cost_details": {"total": 0.02},
+            }
+        ]
+    }
+    conv = parse_data(data)
+    turn = conv.turns[0]
+    assert turn.usage_details == {"input_tokens": 10, "reasoning_tokens": 2}
+    assert turn.provided_usage_details == {"input_tokens": 11}
+    assert turn.cost_details == {"input": 0.01}
+    assert turn.provided_cost_details == {"total": 0.02}
+
+
 def test_load_all_samples():
     convs = load_conversations([SAMPLE_DIR])
     assert len(convs) == 5

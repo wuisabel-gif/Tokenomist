@@ -29,10 +29,14 @@ class TraceRow:
     role: str
     input_tokens: int
     output_tokens: int
+    usage_details: dict[str, int]
+    provided_usage_details: dict[str, int]
     tool_calls: int
     tool_failures: int
     latency_ms: float
     cost_usd: float | None
+    cost_details: dict[str, float]
+    provided_cost_details: dict[str, float]
     cumulative_cost_usd: float | None
     is_retry: bool
     is_correction: bool
@@ -51,12 +55,16 @@ class AgentReport:
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    usage_details: dict[str, int]
+    provided_usage_details: dict[str, int]
     tool_calls: int
     tool_success_rate: float
     retry_loops: int
     correction_count: int
     latency_estimate_ms: float
     cost_estimate_usd: float | None
+    cost_details: dict[str, float]
+    provided_cost_details: dict[str, float]
     success_turn: int | None
     turns_to_success: int | None
     tokens_to_success: int | None
@@ -120,15 +128,27 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
         if turn.role is Role.ASSISTANT:
             in_toks = turn.input_tokens if turn.input_tokens is not None else running_context
             out_toks = _turn_output_tokens(turn)
-            cost = prices.cost_usd(conv.model, in_toks, out_toks)
+            usage_details = {
+                **turn.usage_details,
+                "input_tokens": turn.usage_details.get("input_tokens", in_toks),
+                "output_tokens": turn.usage_details.get("output_tokens", out_toks),
+            }
+            cost_details = turn.cost_details or prices.cost_details_usd(conv.model, usage_details)
+            cost = None if cost_details is None else sum(cost_details.values())
             latency = (
                 turn.latency_ms
                 if turn.latency_ms is not None
                 else prices.latency_ms(conv.model, out_toks)
             )
+            provided_usage_details = dict(turn.provided_usage_details)
+            provided_cost_details = dict(turn.provided_cost_details)
         else:
             in_toks, out_toks, latency = 0, 0, 0.0
             cost = 0.0 if model_known else None
+            usage_details = {}
+            provided_usage_details = {}
+            cost_details = {} if model_known else None
+            provided_cost_details = {}
 
         if cost is not None and cumulative_cost is not None:
             cumulative_cost += cost
@@ -141,10 +161,18 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
                 role=turn.role.value,
                 input_tokens=in_toks,
                 output_tokens=out_toks,
+                usage_details=usage_details,
+                provided_usage_details=provided_usage_details,
                 tool_calls=tool_calls,
                 tool_failures=tool_failures,
                 latency_ms=round(latency, 1),
                 cost_usd=None if cost is None else round(cost, 6),
+                cost_details=(
+                    {}
+                    if cost_details is None
+                    else {k: round(v, 6) for k, v in cost_details.items()}
+                ),
+                provided_cost_details={k: round(v, 6) for k, v in provided_cost_details.items()},
                 cumulative_cost_usd=(
                     None if cumulative_cost is None else round(cumulative_cost, 6)
                 ),
@@ -165,6 +193,10 @@ def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
 
     input_tokens = sum(r.input_tokens for r in trace)
     output_tokens = sum(r.output_tokens for r in trace)
+    usage_details = _sum_int_maps(r.usage_details for r in trace)
+    provided_usage_details = _sum_int_maps(r.provided_usage_details for r in trace)
+    cost_details = _sum_float_maps(r.cost_details for r in trace)
+    provided_cost_details = _sum_float_maps(r.provided_cost_details for r in trace)
     # None if any turn's price is unknown (uniform per conversation).
     total_cost: float | None = (
         None if any(r.cost_usd is None for r in trace) else sum(r.cost_usd for r in trace)  # type: ignore[misc]
@@ -206,12 +238,16 @@ def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens,
+        usage_details=usage_details,
+        provided_usage_details=provided_usage_details,
         tool_calls=total_tool_calls,
         tool_success_rate=round(tool_success_rate, 4),
         retry_loops=retry_loops,
         correction_count=correction_count,
         latency_estimate_ms=round(total_latency, 1),
         cost_estimate_usd=None if total_cost is None else round(total_cost, 6),
+        cost_details={k: round(v, 6) for k, v in cost_details.items()},
+        provided_cost_details={k: round(v, 6) for k, v in provided_cost_details.items()},
         success_turn=conv.success_turn,
         turns_to_success=turns_to_success,
         tokens_to_success=tokens_to_success,
@@ -220,6 +256,22 @@ def analyze(conv: Conversation, prices: PriceBook | None = None) -> AgentReport:
         convergence_efficiency=convergence_efficiency,
         trace=trace,
     )
+
+
+def _sum_int_maps(maps) -> dict[str, int]:
+    total: dict[str, int] = {}
+    for item in maps:
+        for key, value in item.items():
+            total[key] = total.get(key, 0) + int(value)
+    return total
+
+
+def _sum_float_maps(maps) -> dict[str, float]:
+    total: dict[str, float] = {}
+    for item in maps:
+        for key, value in item.items():
+            total[key] = total.get(key, 0.0) + float(value)
+    return total
 
 
 def _convergence_efficiency(

@@ -126,6 +126,8 @@ the canned reference solution you ship with the task.
 | Field in the log | Source |
 | --- | --- |
 | `input_tokens` / `output_tokens` | the API response `usage` |
+| `usage_details` | Tokenomist-normalized usage map written from the API response |
+| `provided_usage_details` | provider-reported usage map, including cache/reasoning/audio keys when present |
 | `latency_ms` | wall-clock around each API call |
 | `success_turn` | first assistant turn after which all tests pass |
 | `is_retry` | assistant turns after the first |
@@ -133,5 +135,5 @@ the canned reference solution you ship with the task.
 | `final_score` | fraction of tests passing at the end (`1.0` ⇒ `final_correct`) |
 | `tool_calls[].ok` | whether the patch parsed and whether the tests passed |
 
-Cost is then computed by Tokenomist from `model` + real token counts, so your
-numbers are exact rather than price-book estimates.
+Cost is then computed by Tokenomist from `model` + usage details, while the
+provider-reported usage stays in `provided_usage_details` for auditability.
