@@ -76,6 +76,7 @@ def test_cost_details_include_cache_read():
     assert details["input"] == 800 / 1_000_000 * 2.5
     assert details["cache_read"] == 200 / 1_000_000 * 1.25
     assert details["output"] == 100 / 1_000_000 * 10.0
+    assert details["total"] == sum(value for key, value in details.items() if key != "total")
 
 
 def test_latency_grows_with_output():

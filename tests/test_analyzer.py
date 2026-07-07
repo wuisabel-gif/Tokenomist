@@ -6,7 +6,7 @@ import os
 
 from tokenomist.analyzer import analyze, analyze_many, build_trace
 from tokenomist.models import Role
-from tokenomist.parsers import load_conversation, load_conversations
+from tokenomist.parsers import load_conversation, load_conversations, parse_data
 from tokenomist.report import rank_reports, render_table, reports_to_json, trace_to_csv
 
 SAMPLE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "samples")
@@ -98,6 +98,32 @@ def test_usage_and_cost_detail_maps_are_aggregated():
     assert rep.usage_details["cached_input_tokens"] == 200
     assert rep.provided_usage_details["cached_input_tokens"] == 201
     assert set(rep.cost_details) >= {"input", "output", "cache_read"}
+
+
+def test_provider_cost_details_are_authoritative():
+    conv = parse_data(
+        {
+            "agent": "ProviderCostAgent",
+            "model": "gpt-4o",
+            "turns": [
+                {
+                    "role": "assistant",
+                    "content": "done",
+                    "usage_details": {
+                        "input_tokens": 1_000_000,
+                        "output_tokens": 1_000_000,
+                    },
+                    "provided_cost_details": {"input": 0.01, "output": 0.02},
+                }
+            ],
+        }
+    )
+
+    rep = analyze(conv)
+    assert rep.cost_details["input"] == 0.01
+    assert rep.cost_details["output"] == 0.02
+    assert rep.cost_details["total"] == 0.03
+    assert rep.cost_estimate_usd == 0.03
 
 
 def test_empty_table():

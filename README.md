@@ -176,10 +176,12 @@ longest family prefix, so dated model ids such as
 `claude-sonnet-4-6-20250514` still resolve. Tokenomist stores derived
 `usage_details` / `cost_details` maps separately from provider-reported
 `provided_usage_details` / `provided_cost_details`, so reports can surface usage
-or billing drift instead of overwriting it. An **unknown model reports cost as
-`n/a`** rather than a fabricated number. Prices are approximate public list
-prices for *relative* comparison, verified `2026-07-04`; update the file (and
-bump `last_verified`) or pass `--prices` to keep them current.
+or billing drift instead of overwriting it. Provider cost is treated as
+authoritative when present; derived price-book cost is used only when no
+provider cost was supplied. An **unknown model reports cost as `n/a`** rather
+than a fabricated number. Prices are approximate public list prices for
+*relative* comparison, verified `2026-07-04`; update the file (and bump
+`last_verified`) or pass `--prices` to keep them current.
 
 ### Dashboard
 

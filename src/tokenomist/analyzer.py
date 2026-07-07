@@ -133,15 +133,20 @@ def build_trace(conv: Conversation, prices: PriceBook | None = None) -> list[Tra
                 "input_tokens": turn.usage_details.get("input_tokens", in_toks),
                 "output_tokens": turn.usage_details.get("output_tokens", out_toks),
             }
-            cost_details = turn.cost_details or prices.cost_details_usd(conv.model, usage_details)
-            cost = None if cost_details is None else sum(cost_details.values())
+            provided_usage_details = dict(turn.provided_usage_details)
+            provided_cost_details = _finalize_cost_details(dict(turn.provided_cost_details))
+            if provided_cost_details:
+                cost_details = provided_cost_details
+            elif turn.cost_details:
+                cost_details = _finalize_cost_details(dict(turn.cost_details))
+            else:
+                cost_details = prices.cost_details_usd(conv.model, usage_details)
+            cost = None if cost_details is None else _total_cost_from_details(cost_details)
             latency = (
                 turn.latency_ms
                 if turn.latency_ms is not None
                 else prices.latency_ms(conv.model, out_toks)
             )
-            provided_usage_details = dict(turn.provided_usage_details)
-            provided_cost_details = dict(turn.provided_cost_details)
         else:
             in_toks, out_toks, latency = 0, 0, 0.0
             cost = 0.0 if model_known else None
@@ -272,6 +277,19 @@ def _sum_float_maps(maps) -> dict[str, float]:
         for key, value in item.items():
             total[key] = total.get(key, 0.0) + float(value)
     return total
+
+
+def _finalize_cost_details(details: dict[str, float]) -> dict[str, float]:
+    """Ensure a cost map has ``total`` when it can be derived."""
+
+    if not details or "total" in details:
+        return details
+    details["total"] = sum(details.values())
+    return details
+
+
+def _total_cost_from_details(details: dict[str, float]) -> float:
+    return details["total"] if "total" in details else sum(details.values())
 
 
 def _convergence_efficiency(

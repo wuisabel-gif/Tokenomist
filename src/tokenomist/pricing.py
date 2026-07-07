@@ -135,7 +135,7 @@ class PriceBook:
                 "output_tokens": output_tokens,
             },
         )
-        return None if details is None else sum(details.values())
+        return None if details is None else details.get("total", sum(details.values()))
 
     def cost_details_usd(
         self, model: str | None, usage_details: dict[str, int]
@@ -147,8 +147,8 @@ class PriceBook:
             return None
 
         details: dict[str, float] = {}
-        input_tokens = usage_details.get("input_tokens", 0)
-        output_tokens = usage_details.get("output_tokens", 0)
+        input_tokens = usage_details.get("input_tokens", usage_details.get("input", 0))
+        output_tokens = usage_details.get("output_tokens", usage_details.get("output", 0))
         cached_tokens = usage_details.get("cached_input_tokens", 0) + usage_details.get(
             "cache_read_input_tokens", 0
         )
@@ -161,6 +161,8 @@ class PriceBook:
         if cached_tokens and price.cache_read_per_mtok is not None:
             details["cache_read"] = cached_tokens / 1_000_000 * price.cache_read_per_mtok
 
+        if details:
+            details["total"] = sum(details.values())
         return details
 
     def latency_ms(self, model: str | None, output_tokens: int) -> float:

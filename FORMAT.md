@@ -86,6 +86,12 @@ and table output. New capture integrations should prefer `usage_details` and
 Tokenomist reports both aggregate maps in JSON output and includes them in trace
 CSV exports.
 
+Cost precedence follows the production observability pattern: if
+`provided_cost_details` contains any cost point, Tokenomist treats it as
+authoritative for that turn and adds `total` when it can be derived. If no
+provider cost is supplied, Tokenomist uses `cost_details` when present, otherwise
+it derives `cost_details` from the price book and usage map.
+
 ### Tool call object
 
 ```json
